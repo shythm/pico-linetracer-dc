@@ -1,0 +1,4 @@
+pico-sdk/
+build/
+.vscode/
+.DS_Store
