@@ -11,6 +11,7 @@ pico_sdk_init()
 add_executable(pico_linetracer_dc
     ./src/main.c
     ./src/sensing.c
+    ./src/timer.c
 )
 
 # Add pico_stdlib library which aggregates commonly used features
