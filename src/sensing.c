@@ -4,7 +4,9 @@
 #include "hardware/adc.h"
 #include "hardware/sync.h"
 
-#define GET_ADC_CHANNEL(GPIO_PIN) ((GPIO_PIN) - (26))
+volatile float voltage;
+volatile uint  sensor_raw[16];
+volatile uint  sensor_normalized[16];
 
 void sensing_init(void) {
   // ADC Block 초기화
@@ -17,16 +19,16 @@ void sensing_init(void) {
 
   // IR 센서부 GPIO 초기화
   gpio_init(SENSING_IR_MUX_SEL0_GPIO);
+  gpio_set_dir(SENSING_IR_MUX_SEL0_GPIO, GPIO_OUT);
   gpio_init(SENSING_IR_MUX_SEL1_GPIO);
+  gpio_set_dir(SENSING_IR_MUX_SEL1_GPIO, GPIO_OUT);
   gpio_init(SENSING_IR_MUX_SEL2_GPIO);
+  gpio_set_dir(SENSING_IR_MUX_SEL2_GPIO, GPIO_OUT);
   gpio_init(SENSING_IR_OUT_MUX_GPIO);
-  gpio_set_dir_out_masked(
-    1 << SENSING_IR_MUX_SEL0_GPIO |
-    1 << SENSING_IR_MUX_SEL1_GPIO |
-    1 << SENSING_IR_MUX_SEL2_GPIO |
-    1 << SENSING_IR_OUT_MUX_GPIO
-  );
+  gpio_set_dir(SENSING_IR_OUT_MUX_GPIO, GPIO_OUT);
 }
+
+#define GET_ADC_CHANNEL(GPIO_PIN) ((GPIO_PIN) - (26))
 
 static uint16_t get_adc_data(uint channel) {  
   uint data[3];
@@ -88,12 +90,44 @@ static uint16_t get_adc_data(uint channel) {
   return data[1];
 }
 
-inline float sensing_voltage(void) {
-  return SENSING_EXPR_RAW_TO_VOLTAGE(
+void sensing_voltage(void) {
+  voltage = SENSING_EXPR_RAW_TO_VOLTAGE(
     get_adc_data(GET_ADC_CHANNEL(SENSING_VOLTAGE_GPIO))
   );
 }
 
-inline uint8_t sensing_ir_receiver(uint num) {
+#define IMS0  (1 << SENSING_IR_MUX_SEL0_GPIO)
+#define IMS1  (1 << SENSING_IR_MUX_SEL1_GPIO)
+#define IMS2  (1 << SENSING_IR_MUX_SEL2_GPIO)
 
+static uint sensor_order[8] = {
+  0x00 | 0x00 | 0x00,
+  0x00 | 0x00 | IMS0,
+  0x00 | IMS1 | 0x00,
+  0x00 | IMS1 | IMS0,
+  IMS2 | 0x00 | 0x00,
+  IMS2 | 0x00 | IMS0,
+  IMS2 | IMS1 | 0x00,
+  IMS2 | IMS1 | IMS0,
+};
+static uint sensor_mask = IMS0 | IMS1 | IMS2;
+
+void sensing_ir_receiver(void) {
+  static uint i = 0;
+  uint raw;
+  uint norm;
+
+  // MUX를 이용하여 IR 발광 및 수광 센서 선택
+  gpio_clr_mask(sensor_mask);
+  gpio_set_mask(sensor_order[i & 0x07]);
+
+  gpio_put(SENSING_IR_OUT_MUX_GPIO, 1); // IR 발광센서 켜기
+  raw = get_adc_data((i & 0x08) ?
+    GET_ADC_CHANNEL(SENSING_IR_IN_MUXB_GPIO) :
+    GET_ADC_CHANNEL(SENSING_IR_IN_MUXA_GPIO)
+  );  // ADC 수행
+  
+  gpio_put(SENSING_IR_OUT_MUX_GPIO, 0); // IR 발광센서 끄기
+
+  i = (i + 1) & 0x07;
 }

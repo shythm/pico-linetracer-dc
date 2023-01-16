@@ -13,7 +13,9 @@
 // ADC로부터 얻은 데이터를 실제 전압으로 바꿔주는 계산식
 #define SENSING_EXPR_RAW_TO_VOLTAGE(X) ((3.3f / 4096.0f * 21.0f / 1.0f) * (X))
 
+extern volatile float voltage;
+
 void sensing_init(void);
-float sensing_voltage(void);
+void sensing_voltage(void);
 
 #endif
