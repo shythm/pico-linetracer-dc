@@ -4,10 +4,6 @@
 #include "hardware/adc.h"
 #include "hardware/sync.h"
 
-volatile float voltage;
-volatile uint  sensor_raw[16];
-volatile uint  sensor_normalized[16];
-
 void sensing_init(void) {
   // ADC Block 초기화
   adc_init();
@@ -30,7 +26,7 @@ void sensing_init(void) {
 
 #define GET_ADC_CHANNEL(GPIO_PIN) ((GPIO_PIN) - (26))
 
-static uint16_t get_adc_data(uint channel) {  
+static uint get_adc_data(uint channel) {  
   uint data[3];
   uint status;
 
@@ -90,6 +86,8 @@ static uint16_t get_adc_data(uint channel) {
   return data[1];
 }
 
+volatile float voltage;
+
 void sensing_voltage(void) {
   voltage = SENSING_EXPR_RAW_TO_VOLTAGE(
     get_adc_data(GET_ADC_CHANNEL(SENSING_VOLTAGE_GPIO))
@@ -100,7 +98,7 @@ void sensing_voltage(void) {
 #define IMS1  (1 << SENSING_IR_MUX_SEL1_GPIO)
 #define IMS2  (1 << SENSING_IR_MUX_SEL2_GPIO)
 
-static uint sensor_order[8] = {
+static const uint sensor_order[8] = {
   0x00 | 0x00 | 0x00,
   0x00 | 0x00 | IMS0,
   0x00 | IMS1 | 0x00,
@@ -110,24 +108,40 @@ static uint sensor_order[8] = {
   IMS2 | IMS1 | 0x00,
   IMS2 | IMS1 | IMS0,
 };
-static uint sensor_mask = IMS0 | IMS1 | IMS2;
+static const uint sensor_mask = IMS0 | IMS1 | IMS2;
 
-void sensing_ir_receiver(void) {
+volatile uint sensor_raw[16];         // ADC로부터 구한 IR 센서의 값
+volatile uint sensor_coef_bias[16];   // IR 센서의 최솟값
+volatile uint sensor_coef_range[16] = {
+  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+};  // IR 센서가 가질 수 있는 범위
+volatile uint sensor_normalized[16];  // 정규화된 IR 센서의 값, 이 값들을 주로 이용
+
+void sensing_infrared(void) {
   static uint i = 0;
-  uint raw;
-  uint norm;
+  uint raw_l, raw_r;
+  uint raw_norm_l, raw_norm_r;
 
   // MUX를 이용하여 IR 발광 및 수광 센서 선택
   gpio_clr_mask(sensor_mask);
-  gpio_set_mask(sensor_order[i & 0x07]);
+  gpio_set_mask(sensor_order[i]);
 
   gpio_put(SENSING_IR_OUT_MUX_GPIO, 1); // IR 발광센서 켜기
-  raw = get_adc_data((i & 0x08) ?
-    GET_ADC_CHANNEL(SENSING_IR_IN_MUXB_GPIO) :
-    GET_ADC_CHANNEL(SENSING_IR_IN_MUXA_GPIO)
-  );  // ADC 수행
-  
+  // 두 개의 MUX로부터 ADC 값을 가져옴
+  raw_l = get_adc_data(GET_ADC_CHANNEL(SENSING_IR_IN_MUXA_GPIO)) << 4;
+  raw_r = get_adc_data(GET_ADC_CHANNEL(SENSING_IR_IN_MUXB_GPIO)) << 4;
   gpio_put(SENSING_IR_OUT_MUX_GPIO, 0); // IR 발광센서 끄기
+
+  // 센서 값 저장
+  sensor_raw[i] = raw_l;
+  sensor_raw[i + 8] = raw_r;
+
+  // 센서 정규화 수행 및 저장
+  sensor_normalized[i]
+    = 0xff * (raw_l - sensor_coef_bias[i])     / sensor_coef_range[i];
+  sensor_normalized[i + 8]
+    = 0xff * (raw_r - sensor_coef_bias[i + 8]) / sensor_coef_range[i + 8];
 
   i = (i + 1) & 0x07;
 }

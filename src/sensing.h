@@ -1,6 +1,8 @@
 #ifndef __SENSING_H_
 #define __SENSING_H_
 
+#include "pico/types.h"
+
 #define SENSING_VOLTAGE_GPIO  26
 
 #define SENSING_IR_MUX_SEL0_GPIO  6
@@ -13,9 +15,15 @@
 // ADC로부터 얻은 데이터를 실제 전압으로 바꿔주는 계산식
 #define SENSING_EXPR_RAW_TO_VOLTAGE(X) ((3.3f / 4096.0f * 21.0f / 1.0f) * (X))
 
-extern volatile float voltage;
-
 void sensing_init(void);
+
+extern volatile float voltage;
 void sensing_voltage(void);
+
+extern volatile uint sensor_raw[16];
+extern volatile uint sensor_coef_bias[16];
+extern volatile uint sensor_coef_range[16];
+extern volatile uint sensor_normalized[16];
+void sensing_infrared(void);
 
 #endif
