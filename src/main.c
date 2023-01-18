@@ -8,11 +8,6 @@ int i = 0;
 
 void sensing_handler(void) {
   sensing_voltage();
-  printf("%d - voltage: %f \r\n", i, voltage);
-  i++;
-  if (i == 16) {
-    timer_periodic_stop(2);
-  }
 }
 
 int main(void) {
@@ -22,8 +17,9 @@ int main(void) {
   timer_periodic_start(2, 500000, sensing_handler);
 
   for (;;) {
-    printf("Main loop \n", voltage);
-    sleep_ms(1000);
+    printf("Encoder counter left: %d, right: %d \n", get_encoder_count(0), get_encoder_count(1));
+    printf("Voltage: %f \n", voltage);
+    sleep_ms(100);
   }
 
   return 0;

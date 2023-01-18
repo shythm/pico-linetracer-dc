@@ -16,8 +16,8 @@ add_executable(pico_linetracer_dc
 
 # Add pico_stdlib library which aggregates commonly used features
 target_link_libraries(pico_linetracer_dc pico_stdlib)
-# target_link_libraries(pico_linetracer_dc hardware_gpio)
 target_link_libraries(pico_linetracer_dc hardware_adc)
+target_link_libraries(pico_linetracer_dc hardware_pio)
 
 # enable usb output, disable uart output
 pico_enable_stdio_usb(pico_linetracer_dc 1)
