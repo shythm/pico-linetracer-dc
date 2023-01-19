@@ -3,8 +3,7 @@
 
 #include "sensing.h"
 #include "timer.h"
-
-int i = 0;
+#include "motor_dc.h"
 
 void sensing_handler(void) {
   sensing_voltage();
@@ -13,13 +12,18 @@ void sensing_handler(void) {
 int main(void) {
   stdio_init_all();
   sensing_init();
+  motor_dc_init();
 
-  timer_periodic_start(2, 500000, sensing_handler);
+  timer_periodic_start(2, 500, sensing_handler);
+
+  float input_voltage_left = -12.0f;
+  float input_voltage_right = 12.0f;
+  motor_dc_set_enabled(MOTOR_DC_LEFT, true);
+  motor_dc_set_enabled(MOTOR_DC_RIGHT, true);
 
   for (;;) {
-    printf("Encoder counter left: %d, right: %d \n", get_encoder_count(0), get_encoder_count(1));
-    printf("Voltage: %f \n", voltage);
-    sleep_ms(100);
+    motor_dc_input_voltage(MOTOR_DC_LEFT,  input_voltage_left, voltage);
+    motor_dc_input_voltage(MOTOR_DC_RIGHT, input_voltage_right, voltage);
   }
 
   return 0;
