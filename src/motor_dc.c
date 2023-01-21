@@ -3,67 +3,92 @@
 #include <stdlib.h>
 #include "hardware/gpio.h"
 #include "hardware/pwm.h"
+#include "hardware/clocks.h"
 
-#define PWM_LEVEL_MAX 0xffff
-#define PWM_LEVEL_MIN 0x0000
+typedef struct {
+    const uint pwm_gpio;
+    // RP2040에는 8개의 PWM slice가 있으며, 각 slice마다 2개의 channel을 가지고 있어 총 16개의 PWM 신호를
+    // 만들어낼 수 있다. 각 GPIO 마다 PWM slice와 channel이 배정돼 있다.
+    // PWM의 slice num은 pwm_gpio_to_slice_num 함수를 통해 구할 수 있으며, channel은 pwm_gpio_to_channel 함수를 통해 구할 수 있다.
+    // 우리는 해당 함수 호출을 매번 할 필요가 없도록 위의 함수를 매크로로 정의하여 각 모터에 들어가는 PWM의 slice num과 channel을 상수화한다.
+    const uint slice_num, channel;
+    // DC 모터 드라이버의 Direction 핀에 들어가는 GPIO를 정의한다.
+    // 모터 드라이버에 내장돼있는 H-Bridge 회로를 이용해 모터의 회전 방향을 변경하는데 이용한다.
+    const uint direction_gpio;
+} motor_dc_t;
 
-const uint motor_dc_pwm[2] = {
-  MOTOR_DC_PWM_LEFT_GPIO,
-  MOTOR_DC_PWM_RIGHT_GPIO,
+#define GPIO_TO_SLICE_NUM(GPIO) ((GPIO >> 1u) & 7u)
+#define GPIO_TO_CHANNEL(GPIO)   ((GPIO & 1u))
+
+// 각 모터에 대한 PWM의 slice 번호와 channel 그리고 Direction GPIO를 저장해 놓는다.
+// (!) 이때, PWM GPIO가 서로 같은 PWM slice이어야 한다.
+//     그렇지 않다면, 다른 곳에서 사용하고 있는 PWM slice 설정을 덮어 씌울 수 있기 때문에 예기지 못한 오작동이 생길 수 있다.
+motor_dc_t motor_dc[MOTOR_DC_COUNT] = {
+    {
+        .pwm_gpio = MOTOR_DC_PWM_LEFT_GPIO,
+        .slice_num = GPIO_TO_SLICE_NUM(MOTOR_DC_PWM_LEFT_GPIO),
+        .channel = GPIO_TO_CHANNEL(MOTOR_DC_PWM_LEFT_GPIO),
+        .direction_gpio = MOTOR_DC_DIRECTION_LEFT_GPIO,
+    },
+    {
+        .pwm_gpio = MOTOR_DC_PWM_RIGHT_GPIO,
+        .slice_num = GPIO_TO_SLICE_NUM(MOTOR_DC_PWM_RIGHT_GPIO),
+        .channel = GPIO_TO_CHANNEL(MOTOR_DC_PWM_RIGHT_GPIO),
+        .direction_gpio = MOTOR_DC_DIRECTION_RIGHT_GPIO,
+    },
 };
-const uint motor_dc_direction[2] = {
-  MOTOR_DC_DIRECTION_LEFT_GPIO,
-  MOTOR_DC_DIRECTION_RIGHT_GPIO,
-};
-
-/*
- * LMD18200에 입력 PWM 신호를 넣을 때, duty cycle의 시간이 너무 짧을 경우
- * 해당 신호가 무시되는 현상이 발생한다. 거의 대부분의 트랜지스터가 그렇다고 하며,
- * 이를 보정하기 위해 짧은 신호가 무시되지 않는 최소한의 duty cycle를 정의한다.
- */
-#define LMD18200_DEAD_ZONE  0
-uint motor_pwm_slice[2];
 
 void motor_dc_init(void) {
-  // 모터 드라이버에 들어갈 PWM을 위해 해당 핀들을 GPIO_FUNC_PWM 기능으로 설정한다.
-  gpio_set_function(MOTOR_DC_PWM_LEFT_GPIO,  GPIO_FUNC_PWM);
-  gpio_set_function(MOTOR_DC_PWM_RIGHT_GPIO, GPIO_FUNC_PWM);
+    const uint freq_sys = clock_get_hz(clk_sys);  // PWM 주파수를 결정하기 위해 clk_sys 주파수를 구한다.
 
-  // PWM 설정
-  pwm_config config = pwm_get_default_config();
-  pwm_config_set_clkdiv(&config, 1.f);
-  
-  for (int i = 0; i < 2; i++) {
-    // PWM 출력 GPIO가 어떤 PWM slice인지 구한다. 이 slice 번호를 이용해 PWM을 제어한다.
-    motor_pwm_slice[i] = pwm_gpio_to_slice_num(motor_dc_pwm[i]);
-    // PWM 초기화
-    pwm_init(motor_dc_pwm[i], &config, false);
-    // 모터 드라이버 방향을 결정하는 GPIO 초기화
-    gpio_init(motor_dc_direction[i]);
-    gpio_set_dir(motor_dc_direction[i], GPIO_OUT);
-  }
+    // RP2040 datasheet 4.5.2.6절에 따르면 PWM 주파수는 다음과 같이 구한다.
+    // f_pwm = f_sys / ( (TOP + 1) * (CSR_PH_CORRECT + 1) * ( DIV_INT + (DIV_FRAC / 16) ) )
+    // * CSR_PH_CORRECT는 카운터 레지스터가 TOP에 도달했을 때 0으로 떨어지는 것이 아니라 그대로 감소하는 설정을 말하며,
+    //   우리는 이 기능을 사용하지 않기 때문에 0으로 둔다.
+    // * DIV_INT 및 DIV_FRAC는 클럭을 나눌 때 사용하며, 기본값인 DIV_INT = 1, DIV_FRAC = 0으로 놔둔다.
+    // 위의 조건에 따라 TOP = ( f_sys / f_pwm ) - 1 식으로 나타낼 수 있다.
+    // 예를 들어, f_sys가 125,000,000Hz이고 f_pwm이 20,000Hz이면 TOP은 6,249이며,
+    // 한 클럭마다 PWM 카운터 레지스터의 값이 0에서부터 1씩 증가하다가, 6,249에 도달하고 나서 0으로 다시 떨어지게 된다.
+    const uint top = (freq_sys / MOTOR_DC_PWM_FREQUENCY) - 1;
+
+    pwm_config config = pwm_get_default_config();
+    pwm_config_set_wrap(&config, top);  // wrap == top
+
+    for (int i = 0; i < MOTOR_DC_COUNT; i++) {
+        // 모터 드라이버에 들어갈 PWM 및 GPIO 초기화
+        gpio_set_function(motor_dc[i].pwm_gpio, GPIO_FUNC_PWM);
+        pwm_init(motor_dc[i].slice_num, &config, false);
+        // 모터의 회전 방향을 결정하는 GPIO 초기화
+        gpio_init(motor_dc[i].direction_gpio);
+        gpio_set_dir(motor_dc[i].direction_gpio, GPIO_OUT);
+    }
 }
 
-void motor_dc_set_enabled(uint motor, bool enabled) {
-  pwm_set_gpio_level(motor_dc_pwm[motor], PWM_LEVEL_MIN);
-  pwm_set_enabled(motor_pwm_slice[motor], enabled);
+void motor_dc_set_enabled(enum motor_index index, bool enabled) {
+    uint slice_num = motor_dc[index].slice_num;
+    uint channel = motor_dc[index].channel;
+
+    pwm_set_chan_level(slice_num, channel, 0);
+    pwm_set_enabled(slice_num, enabled);
 }
 
-void motor_dc_input_voltage(uint motor, float input_voltage, float supply_voltage) {
-  // PWM duty cycle 계산
-  float duty_cycle = input_voltage / supply_voltage;
+void motor_dc_input_voltage(enum motor_index index, float input_voltage, float supply_voltage) {
+    // PWM duty cycle 계산
+    float duty_cycle = input_voltage / supply_voltage;
 
-  // 모터 회전 방향 설정
-  gpio_put(motor_dc_direction[motor], duty_cycle > 0.f);
+    // 모터 회전 방향 설정
+    gpio_put(motor_dc[index].direction_gpio, duty_cycle > 0.f);
 
-  // PWM level 계산
-  int level = LMD18200_DEAD_ZONE + abs(duty_cycle * PWM_LEVEL_MAX);
-  if (level > PWM_LEVEL_MAX) {
-    level = PWM_LEVEL_MAX;
-  } else if (level < PWM_LEVEL_MIN) {
-    level = PWM_LEVEL_MIN;
-  }
+    // PWM 카운터 최댓값 구하기
+    const uint pwm_top = pwm_hw->slice[motor_dc[index].slice_num].top;
 
-  // PWM 출력
-  pwm_set_gpio_level(motor_dc_pwm[motor], (uint16_t)level);
+    int level = MOTOR_DC_PWM_DEAD_ZONE + abs(pwm_top * duty_cycle); // PWM level 계산
+    if (level > pwm_top) {  // max limit(max)
+        level = pwm_top;
+    } else if (level < MOTOR_DC_PWM_DEAD_ZONE) { // min limit
+        level = MOTOR_DC_PWM_DEAD_ZONE;
+    }
+
+    // PWM 출력
+    pwm_set_chan_level(motor_dc[index].slice_num, motor_dc[index].channel, (uint16_t)level);
 }
