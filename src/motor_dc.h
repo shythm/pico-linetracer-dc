@@ -1,5 +1,5 @@
 #ifndef __MOTOR_DC_H_
-#define __MOTOR_DC_H
+#define __MOTOR_DC_H_
 
 #define MOTOR_DC_PWM_LEFT_GPIO          14
 #define MOTOR_DC_PWM_RIGHT_GPIO         15
