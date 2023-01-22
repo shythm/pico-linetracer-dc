@@ -14,13 +14,17 @@ add_executable(pico_linetracer_dc
     ./src/timer.c
     ./src/motor_dc.c
     ./src/switch.c
+    ./src/oled.c
 )
 
 # Add pico_stdlib library which aggregates commonly used features
-target_link_libraries(pico_linetracer_dc pico_stdlib)
-target_link_libraries(pico_linetracer_dc hardware_adc)
-target_link_libraries(pico_linetracer_dc hardware_pio)
-target_link_libraries(pico_linetracer_dc hardware_pwm)
+target_link_libraries(pico_linetracer_dc
+    pico_stdlib
+    hardware_adc
+    hardware_pio
+    hardware_pwm
+    hardware_spi
+)
 
 # enable usb output, disable uart output
 pico_enable_stdio_usb(pico_linetracer_dc 1)
