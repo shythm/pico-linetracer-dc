@@ -4,6 +4,10 @@
  * @brief oled driver(ssd1331 module) and utilities for pico linetracer
  */
 #include "oled.h"
+#include "fonts.h"
+
+#include <stdio.h>
+#include <stdarg.h>
 
 #include "hardware/gpio.h"
 #include "hardware/spi.h"
@@ -40,6 +44,13 @@ enum oled_command {
     OLED_CMD_VCOMH          = 0xBE,    // Set Vcomh voltge
 };
 
+#define OLED_DISPLAY_WIDTH  96
+#define OLED_DISPLAY_HEIGHT 64
+
+#define OLED_UNIT_WIDTH     8
+#define OLED_UNIT_HEIGHT    8
+#define OLED_UNIT_AREA      OLED_UNIT_WIDTH * OLED_UNIT_HEIGHT
+
 static inline void oled_write_command(const uint8_t *command, size_t length) {
     gpio_put(OLED_CS_GPIO, 0);
     gpio_put(OLED_DC_GPIO, 0);  // 0 is command mode
@@ -56,6 +67,36 @@ static inline void oled_write_data(const uint8_t *data, size_t length) {
     spi_write_blocking(OLED_SPI_INSTANCE, data, length);
 
     gpio_put(OLED_CS_GPIO, 1);
+}
+
+static inline void oled_set_address(uint8_t x1, uint8_t y1, uint8_t x2, uint8_t y2) {
+    const uint8_t cmd[] = {
+        OLED_CMD_SETCOLUMN,
+        x1 & 0x7F,
+        x2 & 0x7F,
+        OLED_CMD_SETROW,
+        y1 & 0x3F,
+        y2 & 0x3F,
+    };
+
+    oled_write_command(cmd, sizeof(cmd));
+}
+
+static inline void oled_reset_address(void) {
+    oled_set_address(0, 0, OLED_DISPLAY_WIDTH - 1, OLED_DISPLAY_HEIGHT - 1);
+}
+
+static inline void oled_putc(char c) {    
+    uint16_t data[FONT_WIDTH * FONT_HEIGHT];
+    const char *font = fonts[c - FONT_START];
+
+    for (int i = 0; i < FONT_WIDTH; i++) {
+        for (int j = 0; j < 8; j++) {
+            data[8 * i + j] = (font[i] & (0x01 << j)) ? 0xFFFF : 0x0000;
+        }
+    }
+
+    oled_write_data((uint8_t *)data, sizeof(data));
 }
 
 void oled_init(void) {
@@ -79,7 +120,14 @@ void oled_init(void) {
     // https://github.com/adafruit/Adafruit-SSD1331-OLED-Driver-Library-for-Arduino
     const uint8_t init_cmd[] = {
         OLED_CMD_DISPLAYOFF,
-        OLED_CMD_SETREMAP, 0x72,
+        OLED_CMD_SETREMAP, 0x73,    // 1b, Vertical address increment
+                                    // 1b, RAM Column 0 to 95 maps to Pin Seg (SA,SB,SC) 95 to 0
+                                    // 0b, normal order SA,SB,SC (e.g. RGB)
+                                    // 0b, Disable left-right swapping on COM
+                                    // 1b, Scan from COM [N-1] to COM0. Where N is the multiplex ratio.
+                                    // 1b, Enable COM Split Odd Even
+                                    // 1b, 
+                                    // 0b, 65k color format
         OLED_CMD_STARTLINE, 0x00,
         OLED_CMD_DISPLAYOFFSET, 0x00,
         OLED_CMD_NORMALDISPLAY,
@@ -109,13 +157,68 @@ void oled_set_enabled(bool enabled) {
 }
 
 void oled_clear_all(void) {
-    const uint8_t cmd[] = {
-        OLED_CMD_CLEAR,
-        0x00,   // Column Address of Start
-        0x00,   // Row Address of Start
-        0x5F,   // Column Address of End (Col 95)
-        0x40,   // Row Address of End (Row 63)
-    };
+    uint16_t data = 0x0000;
 
-    oled_write_command(cmd, sizeof(cmd));
+    oled_reset_address();
+    for (int i = 0; i < OLED_DISPLAY_HEIGHT * OLED_DISPLAY_WIDTH; i++) {
+        oled_write_data((uint8_t *)&data, sizeof(data));
+    }
+
+    // const uint8_t cmd[] = {
+    //     OLED_CMD_CLEAR,
+    //     0x00,   // Column Address of Start
+    //     0x00,   // Row Address of Start
+    //     0x5F,   // Column Address of End (Col 95)
+    //     0x3F,   // Row Address of End (Row 63)
+    // };
+
+    // oled_write_command(cmd, sizeof(cmd));
+}
+
+void oled_set_cursor(uint8_t row, uint8_t col) {
+    oled_set_address(
+        col * (OLED_DISPLAY_WIDTH / OLED_UNIT_WIDTH),
+        row * (OLED_DISPLAY_HEIGHT / OLED_UNIT_HEIGHT),
+        OLED_DISPLAY_WIDTH,
+        row * (OLED_DISPLAY_HEIGHT / OLED_UNIT_HEIGHT) + OLED_UNIT_HEIGHT - 1
+    );
+}
+
+void oled_printf(const char *format, ...) {
+    char buffer[OLED_PRINT_BUFFER];
+
+    va_list args;
+    va_start(args, format);
+    vsprintf(buffer, format, args);
+    va_end(args);
+
+    char *str = buffer;
+    bool command_flag = false;
+    uint length = 0;
+
+    while (*str) {
+        if (command_flag) {
+            // 슬래시 문자 다음에 오는 명령 문자에 대해 처리한다.
+            switch (*str) {
+            case '0': case '1': case '2': case '3':
+            case '4': case '5': case '6': case '7':
+                // 0에서 7 사이의 문자가 올 때 출력을 진행할 행을 결정한다.
+                oled_set_cursor(*str - '0', 0);
+                break;
+            default:
+                // 정의되지 않은 문자가 올 때 무시하고 출력한다.
+                oled_putc(*str);
+                break;
+            }
+            command_flag = false;
+        } else {
+            if (*str == '/') {
+                command_flag = true;
+            } else {
+                oled_putc(*str);
+            }
+        }
+
+        str++;
+    }
 }
