@@ -1,11 +1,8 @@
-/*
- ******************************************************************************
- * file         switch.c
- * author       Joonho Gwon
- * modified by  Seongho Lee (2023.01.19.)
- * brief        STM32F411 Nucleo Board에서 사용하던 Switch 라이브러리를
- *              Raspberry Pi Pico에 맞게 포팅 및 수정한 소스코드
- ******************************************************************************
+/**
+ * @file switch.c
+ * @author Joonho Gwon (Modified by Seongho Lee)
+ * @brief STM32F411 Nucleo Board에서 사용하면 Switch 라이브러리를 Raspberry Pi Pico에 맞게 포팅 및 수정한 소스코드
+ * @date 2023-01-26
  */
 
 #include "switch.h"
@@ -13,23 +10,27 @@
 #include "pico/time.h"
 #include "hardware/gpio.h"
 
-#define SWITCH_STATE_LONG_OFF   0x01  // 0001
-#define SWITCH_STATE_SHORT_ON   0x02  // 0010
-#define SWITCH_STATE_LONG_ON    0x04  // 0100
-#define SWITCH_STATE_SHORT_OFF  0x08  // 1000
-
 typedef struct {
   const uint gpio;
   uint timer;
   uint state;
 } switch_state_t;
 
-#define SWITCH_L  0
-#define SWITCH_R  1
-switch_state_t switch_state[2] = {
+enum switch_index {
+  SWITCH_L = 0,
+  SWITCH_R,
+  SWITCH_COUNT,
+};
+
+switch_state_t switch_state[SWITCH_COUNT] = {
   { .gpio = SWITCH_LEFT_GPIO },
   { .gpio = SWITCH_RIGHT_GPIO },
 };
+
+#define SWITCH_STATE_LONG_OFF   0x01  // 0001
+#define SWITCH_STATE_SHORT_ON   0x02  // 0010
+#define SWITCH_STATE_LONG_ON    0x04  // 0100
+#define SWITCH_STATE_SHORT_OFF  0x08  // 1000
 
 static bool switch_state_machine(switch_state_t *pstate) {
   /*
@@ -132,7 +133,7 @@ void switch_init(void) {
   }
 }
 
-uint switch_read(void) {
+switch_event_t switch_read(void) {
   sleep_ms(1);
 
   /*
@@ -157,9 +158,20 @@ uint switch_read(void) {
     clicked_l = true;
   }
 
-  uint ret = 0;
+  switch_event_t ret = 0;
   if (clicked_l) ret |= SWITCH_EVENT_LEFT;
   if (clicked_r) ret |= SWITCH_EVENT_RIGHT;
 
   return ret;
+}
+
+switch_event_t switch_read_wait_ms(uint ms) {
+  // switch_read 함수가 기본적으로 약 1ms 딜레이를 가지므로
+  // 아래의 반복문을 ms만큼 도는 것이 ms만큼 기다리는 것과 동등한 행위가 된다.
+  for (int i = 0; i < ms; i++) {
+    switch_event_t sw = switch_read();
+    if (sw) return sw;
+  }
+  
+  return SWITCH_EVENT_NONE;
 }
