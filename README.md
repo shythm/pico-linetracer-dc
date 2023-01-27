@@ -39,9 +39,3 @@ $ mkdir build
 $ cd build
 $ cmake ..
 ```
-
-first,
-
-```
-$ git clone https://github.com/raspberrypi/pico-sdk
-```
