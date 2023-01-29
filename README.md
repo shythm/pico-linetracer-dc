@@ -26,10 +26,10 @@ $ echo "export PICO_TOOLCHAIN_PATH=/usr/share/gcc-arm-none-eabi-10.3-2021.10" >>
 $ git clone https://github.com/raspberrypi/pico-sdk
 ```
 
-4. cmake 설치
+4. 필요한 바이너리 설치
 
 ```sh
-$ sudo apt install cmake
+$ sudo apt install build-essential cmake
 ```
 
 5. build 폴더 만들고, CMake 수행
