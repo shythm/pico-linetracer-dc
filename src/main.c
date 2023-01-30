@@ -11,12 +11,14 @@ void sensing_handler(void) {
   sensing_voltage();
 }
 
+
 int main(void) {
   stdio_init_all();
   
   switch_init();
   sensing_init();
   motor_dc_init();
+  motor_control_init();
   oled_init();
   oled_clear_all();
 
@@ -44,6 +46,8 @@ int main(void) {
       motor_dc_input_voltage(MOTOR_DC_RIGHT, input_voltage, voltage);
       oled_printf("/0Vmo: %2.1f", input_voltage);
       oled_printf("/1Vin: %2.1f", voltage);
+      oled_printf("/2spd0:%2.4f", cur_velo[0]);
+      oled_printf("/3spd1:%2.4f", cur_velo[1]);
     } else {
       oled_printf("/0motor disabl/1ced.");
     }

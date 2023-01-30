@@ -4,6 +4,10 @@
 #include "hardware/gpio.h"
 #include "hardware/pwm.h"
 #include "hardware/clocks.h"
+#include "sensing.h"
+#include "timer.h"
+
+#define ABS(x) (x>0)?x:-x 
 
 typedef struct {
     const uint pwm_gpio;
@@ -91,4 +95,79 @@ void motor_dc_input_voltage(enum motor_index index, float input_voltage, float s
 
     // PWM 출력
     pwm_set_chan_level(motor_dc[index].slice_num, motor_dc[index].channel, (uint16_t)level);
+}
+
+#define PI 3.141592f
+const float dt_us = 100;
+const float interrupt_period_sec = dt_us / (1000 * 1000); // 속도 구하는 함수를 작동시키는 인터럽트가 작동하는 주기(단위는 s).
+const float wheel_diameter_m = 0.038; // 바퀴의 지름(m)
+const float gear_ratio = 0.2463768; // 모터(17)/바퀴(69) 기어비 
+const float velo_param = PI * wheel_diameter_m * gear_ratio / 2048 / interrupt_period_sec; // 속도를 구하기 위한 계수를 계산해놓는다.
+
+float cur_velo[2]; // 각 모터의 현재 속도 (m/s)
+
+void get_velocity_from_encoder(void){    
+    static int pre_tick[2];
+    int cur_tick[2];
+
+    cur_tick[MOTOR_DC_LEFT] = get_encoder_count(MOTOR_DC_LEFT);
+    cur_tick[MOTOR_DC_RIGHT] = get_encoder_count(MOTOR_DC_RIGHT);
+
+    cur_velo[MOTOR_DC_LEFT] = (cur_tick[MOTOR_DC_LEFT] - pre_tick[MOTOR_DC_LEFT])*velo_param;
+    cur_velo[MOTOR_DC_RIGHT] = (cur_tick[MOTOR_DC_RIGHT] - pre_tick[MOTOR_DC_RIGHT])*velo_param;
+    pre_tick[MOTOR_DC_LEFT] = cur_tick[MOTOR_DC_LEFT];
+    pre_tick[MOTOR_DC_RIGHT] = cur_tick[MOTOR_DC_RIGHT];
+}
+
+
+float tar_velo[2]; // 각 모터에 대한 목표 속도(m/s)
+float target_velocity; // 목표 속도 (두 모터의 목표 평균 속도)
+
+void set_target_velocity(float target_vel){
+    target_velocity = target_vel;
+}
+
+const float sampling_time_ms = 0.2;
+const float k_p = 0.72;
+const float k_i = 0.65;
+const float k_d = 0.375;
+float error_sum[2] = {0,};
+float error[2];    
+
+void motor_control_init(void){
+    set_target_velocity(0);
+    timer_periodic_start(1, dt_us , get_velocity_from_encoder);
+}
+
+
+
+void motor_dc_control(void) {  
+    float pre_error[2];
+    float p_term[2], i_term[2], d_term[2];
+
+    // 각 모터에 대한 현재 모터 속도를 측정한다.
+    cur_velo[MOTOR_DC_LEFT];
+    cur_velo[MOTOR_DC_RIGHT];
+    // 각 모터에 대한 pre_error(이전 error값)을 저장한다. - 유추항을 위해
+    pre_error[MOTOR_DC_LEFT] = error[MOTOR_DC_LEFT];
+    pre_error[MOTOR_DC_RIGHT] = error[MOTOR_DC_RIGHT];
+    // 각 모터에 대한 error(현재 속도와 목표 속도와의 차)를 구한다.
+    error[MOTOR_DC_LEFT] = tar_velo[MOTOR_DC_LEFT] - cur_velo[MOTOR_DC_LEFT];
+    error[MOTOR_DC_RIGHT] = tar_velo[MOTOR_DC_RIGHT] - cur_velo[MOTOR_DC_RIGHT];
+    // 각 모터에 대한 error_sum(error의 누적)를 계산한다. - 적분항을 위해.
+    // anti-windup : error의 누적에 제한을 건다.
+    error_sum[MOTOR_DC_LEFT] += error[MOTOR_DC_LEFT];
+    error_sum[MOTOR_DC_RIGHT] += error[MOTOR_DC_RIGHT];
+    if(error_sum[MOTOR_DC_LEFT])
+    
+    // error를 통해 p_term(proportional term, 비례항)를 구한다.
+    p_term[MOTOR_DC_LEFT] = k_p * error[MOTOR_DC_LEFT];
+    p_term[MOTOR_DC_RIGHT] = k_p * error[MOTOR_DC_RIGHT];
+    // error의 누적을 통해 i_term(integral term, 적분항)를 구한다.
+    i_term[MOTOR_DC_LEFT] = k_i * error_sum[MOTOR_DC_LEFT];
+    i_term[MOTOR_DC_RIGHT] = k_i * error_sum[MOTOR_DC_RIGHT];
+    // error - pre_error를 통해 d_term(derivative term, 미분항)를 구한다.
+    d_term[MOTOR_DC_LEFT] = k_d * (error[MOTOR_DC_LEFT] - pre_error[MOTOR_DC_LEFT]);
+    d_term[MOTOR_DC_RIGHT] = k_d * (error[MOTOR_DC_RIGHT] - pre_error[MOTOR_DC_RIGHT]);
+
 }
