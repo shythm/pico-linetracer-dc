@@ -12,8 +12,7 @@
 
 // 모터 드라이버에 입력 PWM 신호를 넣을 때, duty cycle이 너무 짧을 경우 해당 신호가 무시되는 현상이 발생한다.
 // 이는 트랜지스터의 전형적인 특징이며, 이를 보정하기 위해 신호가 인식되는 최소한의 duty cycle을 정의한다.
-// TODO: 오실로스코프로 LMD18200 모터드라이버의 dead zone을 측정하자.
-#define MOTOR_DC_PWM_DEAD_ZONE  0
+#define MOTOR_DC_PWM_DEAD_ZONE  40
 
 #define K_PROPORTIONAL  1.1 
 #define K_INTEGRAL      1.1
@@ -50,30 +49,27 @@ void motor_dc_set_enabled(enum motor_index index, bool enabled);
  */
 void motor_dc_input_voltage(enum motor_index index, float input_voltage, float supply_voltage);
 
+extern float cur_velo[MOTOR_DC_COUNT];  // 각 모터의 현재 속도 (m/s)
+extern float error_sum[MOTOR_DC_COUNT];    // 에러의 누적을 저장하는 변수
 
-extern float cur_velo[2]; // 각 모터의 현재 속도 (m/s)
 
 /**
- * @brief 인터럽트를 통해 주기적으로 호출되며, 현재 속도를 업데이트하는 함수.
+ * @brief 현재 속도를 업데이트하는 함수. 인터럽트를 사용해 주기적으로 실행해야 제대로 작동한다.
 */
-void get_velocity_from_encoder(void);
+void update_velocity_from_encoder(void);
 
 /**
  * @brief 목표 속도를 설정한다.
+ *
+ * @param target_vel 설정할 목표 속도(m/s)
 */
 void set_target_velocity(float target_vel);
 
-/**
- * @brief 모터 컨트롤을 하기 전에 관련 파라미터를 초기화한다.
-*/
-void moter_control_init(void);
-
+float get_target_velocity(void);
 
 /**
- * @brief 속도에 대한 PID제어를 한다.
+ * @brief dc모터 컨트롤을 하기 전에 관련 파라미터를 초기화한다.
 */
-void motor_dc_control(void);
-
-void motor_control_init(void);
+void motor_dc_control_enabled(bool enabled);
 
 #endif
