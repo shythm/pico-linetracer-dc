@@ -210,6 +210,9 @@ void motor_dc_control(void) {
     // error의 미분(error - pre_error)을 통해 d_term(derivative term, 미분항)를 구한다.
     // 이때 미분항의 노이즈를 줄이기위해 low pass filter을 거친다.
     // low pass filter : f(x) = x*c/(x+c) -> x == c일 때 아웃풋이 x/2인 분수함수형의 low pass filter이다.
+
+    // 논의점 1 low pass filter가 필요한가?
+    // 논의점 2 d_term이 필요한가? 
     d_error[MOTOR_DC_LEFT] = error[MOTOR_DC_LEFT] - pre_error[MOTOR_DC_LEFT];
     d_error[MOTOR_DC_RIGHT] = error[MOTOR_DC_RIGHT] - pre_error[MOTOR_DC_RIGHT];
     d_term[MOTOR_DC_LEFT] = k_d * lpf_const * d_error[MOTOR_DC_LEFT] / (lpf_const + d_error[MOTOR_DC_LEFT]);

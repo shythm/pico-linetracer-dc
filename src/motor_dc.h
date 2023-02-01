@@ -65,10 +65,15 @@ void update_velocity_from_encoder(void);
 */
 void set_target_velocity(float target_vel);
 
+/**
+ * @brief 설정한 목표 속도를 가져온다.
+*/
 float get_target_velocity(void);
 
 /**
  * @brief dc모터 컨트롤을 하기 전에 관련 파라미터를 초기화한다.
+ * 
+ * @param enabled 0 : dc모터 제어 종료 / 1 : dc모터 제어 시작           
 */
 void motor_dc_control_enabled(bool enabled);
 
