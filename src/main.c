@@ -7,9 +7,13 @@
 #include "motor_dc.h"
 #include "oled.h"
 
+#include "hardware/clocks.h"
+
+
 void sensing_handler(void) {
   sensing_voltage();
 }
+
 
 int main(void) {
   stdio_init_all();
@@ -22,30 +26,33 @@ int main(void) {
 
   timer_periodic_start(2, 500, sensing_handler);
 
-  float input_voltage = 0.f;
+  float tv = 0.f;
   bool motor_enabled = false;
 
   for (;;) {
     uint sw = switch_read_wait_ms(100);
 
     if (sw == SWITCH_EVENT_LEFT) {
-      input_voltage -= 1.f;
+      tv -= 0.1f;
     } else if (sw == SWITCH_EVENT_RIGHT) {
-      input_voltage += 1.f;
+      tv += 0.1f;
     } else if (sw == SWITCH_EVENT_BOTH) {
       motor_enabled = !motor_enabled;
-      motor_dc_set_enabled(MOTOR_DC_LEFT, motor_enabled);
-      motor_dc_set_enabled(MOTOR_DC_RIGHT, motor_enabled);
+
+      motor_dc_control_enabled(motor_enabled);
       oled_clear_all();
     }
+    set_target_velocity(tv);
 
     if (motor_enabled) {
-      motor_dc_input_voltage(MOTOR_DC_LEFT,  input_voltage, voltage);
-      motor_dc_input_voltage(MOTOR_DC_RIGHT, input_voltage, voltage);
-      oled_printf("/0Vmo: %2.1f", input_voltage);
-      oled_printf("/1Vin: %2.1f", voltage);
+      oled_printf("/0tv: %2.2f", tv);
+      oled_printf("/1spdl:%2.4f", cur_velo[0]);
+      oled_printf("/2spdr:%2.4f", cur_velo[1]);
+      oled_printf("/3ersl:%2.1f", error_sum[0]);
+      oled_printf("/4ersr:%2.1f", error_sum[1]);
     } else {
       oled_printf("/0motor disabl/1ced.");
+      oled_printf("/2%ld", clock_get_hz(clk_sys));
     }
   }
 

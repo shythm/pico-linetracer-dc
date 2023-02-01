@@ -1,9 +1,17 @@
 #include "motor_dc.h"
 
 #include <stdlib.h>
+#include "pico/time.h"
 #include "hardware/gpio.h"
 #include "hardware/pwm.h"
 #include "hardware/clocks.h"
+#include "sensing.h"
+#include "timer.h"
+
+/**
+ * @brief 속도에 대한 PID제어를 한다.
+ */
+void motor_dc_control(void);
 
 typedef struct {
     const uint pwm_gpio;
@@ -91,4 +99,131 @@ void motor_dc_input_voltage(enum motor_index index, float input_voltage, float s
 
     // PWM 출력
     pwm_set_chan_level(motor_dc[index].slice_num, motor_dc[index].channel, (uint16_t)level);
+}
+
+#define PI 3.141592f
+const float dt_us = 500;                                                                    // 모터 제어시 인터럽트가 발생하는 주기(us)
+const float interrupt_period_sec = dt_us / (1000 * 1000);                                   // 속도 구하는 함수를 작동시키는 인터럽트가 작동하는 주기(단위는 s).
+const float wheel_diameter_m = 0.038;                                                       // 바퀴의 지름(m)
+const float gear_ratio = 17.f / 69.f;                                                       // 모터(17)/바퀴(69) 기어비
+const float velo_param = PI * wheel_diameter_m * gear_ratio / 2048 / interrupt_period_sec;  // 속도를 구하기 위한 계수를 계산해놓는다.
+
+float cur_velo[MOTOR_DC_COUNT];  // 각 모터의 현재 속도 (m/s)
+
+void update_velocity_from_encoder(void) {
+    static int pre_tick[2];
+    int cur_tick[2];
+
+    // 현재 엔코더에서 측정한 틱 수를 가져온다.
+    cur_tick[MOTOR_DC_LEFT] = get_encoder_count(MOTOR_DC_LEFT);
+    cur_tick[MOTOR_DC_RIGHT] = get_encoder_count(MOTOR_DC_RIGHT);
+
+    // dt_us(us)전에 측정한 틱 수를 현재 틱 수에서 뺀 수에 velo_param을 곱하여 현재 속도를 구한다.
+    // 여기서 왼쪽 모터의 속도를 구하는 데 (현재 틱수-이전 틱수)에 -를 붙인다. 
+    // 그 이유는 실제 전진하는 회전 방향과 엔코더의 틱이 올라가는 회전 방향이 반대이기 때문이다
+    cur_velo[MOTOR_DC_LEFT] = -(cur_tick[MOTOR_DC_LEFT] - pre_tick[MOTOR_DC_LEFT]) * velo_param;
+    cur_velo[MOTOR_DC_RIGHT] = (cur_tick[MOTOR_DC_RIGHT] - pre_tick[MOTOR_DC_RIGHT]) * velo_param;
+
+    // 현재 엔코더에서 측정한 틱 수를 다음 속도 측정을 위해 저장한다.
+    pre_tick[MOTOR_DC_LEFT] = cur_tick[MOTOR_DC_LEFT];
+    pre_tick[MOTOR_DC_RIGHT] = cur_tick[MOTOR_DC_RIGHT];
+}
+
+float tar_velo[MOTOR_DC_COUNT]; // 각 모터에 대한 목표 속도(m/s)
+float target_velocity;          // 목표 속도 (두 모터의 목표 평균 속도)
+
+void set_target_velocity(float target_vel) {
+    target_velocity = target_vel;
+}
+
+float get_target_velocity(void) {
+    return target_velocity;
+}
+
+const float k_p = 0.005f;               // P 비례상수
+const float k_i = 0.005f;               // I 비례상수
+const float k_d = 0.003f;               // D 비례상수
+const float limit_error_sum = 10.f;     // error_sum을 제한하는 상수
+const float lpf_const = 0.1f;           // low pass filter의 감도를 설정하는 상수
+float error_sum[MOTOR_DC_COUNT] = {0,}; // 에러의 누적을 저장하는 변수
+float error[MOTOR_DC_COUNT];            // 에러를 저장하는 변수
+
+void motor_dc_control_enabled(bool enabled) {
+    if (enabled) {
+        set_target_velocity(0);                            // 목표 속도 0으로 초기화.
+        motor_dc_set_enabled(MOTOR_DC_LEFT, true);         // 왼쪽 모터 드라이버에 PWM 신호 인가
+        motor_dc_set_enabled(MOTOR_DC_RIGHT, true);        // 오른쪽 모터 드라이버에 PWM 신호 인가
+        timer_periodic_start(1, dt_us, motor_dc_control);  // dc모터 제어 interrupt 시작
+    } else {
+        set_target_velocity(0);                      // 목표 속도 0으로 설정
+        sleep_ms(250);                               // 목표 속도에 도달하는 시간을 기다려준다.
+        motor_dc_set_enabled(MOTOR_DC_LEFT, false);  // 왼쪽 모터 드라이버에 PWM 신호 인가 종료
+        motor_dc_set_enabled(MOTOR_DC_RIGHT, false); // 오른쪽 모터 드라이버에 PWM 신호 인가 종료
+        timer_periodic_stop(1);                      // dc모터 제어 interrupt 중지
+    }
+}
+
+void motor_dc_control(void) {
+    float p_term[MOTOR_DC_COUNT], i_term[MOTOR_DC_COUNT], d_term[MOTOR_DC_COUNT];  // 각각 비례항, 적분항, 미분항
+    float d_error[MOTOR_DC_COUNT];   // 에러의 미분값(derivative of error)을 저장하는 변수
+    float pre_error[MOTOR_DC_COUNT]; // 에러의 미분값을 구하기 위해 dt_us(us)전의 에러를 저장하는 변수
+    float pid[MOTOR_DC_COUNT];       // 비례항 적분항 미분항의 합에 비례하는 최종적으로 인가할 전압을 저장하는 변수
+
+    // 각 모터에 대한 현재 속도를 측정한다.
+    update_velocity_from_encoder();
+
+    // 목표 속도에 따른 각 모터의 실제 목표 속도를 설정한다.
+    // !!!!!아직 센서 파트가 만들어져있지 않으므로 완성된 것은 아님!!!!!!
+    tar_velo[MOTOR_DC_LEFT] = tar_velo[MOTOR_DC_RIGHT] = target_velocity;
+
+    // 각 모터에 대한 pre_error(이전 error값)을 저장한다. - 비례항을 위해
+    pre_error[MOTOR_DC_LEFT] = error[MOTOR_DC_LEFT];
+    pre_error[MOTOR_DC_RIGHT] = error[MOTOR_DC_RIGHT];
+
+    // 각 모터에 대한 error(현재 속도와 목표 속도와의 차)를 구한다.
+    error[MOTOR_DC_LEFT] = tar_velo[MOTOR_DC_LEFT] - cur_velo[MOTOR_DC_LEFT];
+    error[MOTOR_DC_RIGHT] = tar_velo[MOTOR_DC_RIGHT] - cur_velo[MOTOR_DC_RIGHT];
+
+    // 각 모터에 대한 error_sum(error의 누적)를 계산한다. - 적분항을 위해.
+    error_sum[MOTOR_DC_LEFT] += error[MOTOR_DC_LEFT];
+    error_sum[MOTOR_DC_RIGHT] += error[MOTOR_DC_RIGHT];
+
+    // anti-windup : error의 누적에 제한을 건다.
+    // 이때 제한값은 limit_error_sum이다.
+    if (error_sum[MOTOR_DC_LEFT] > limit_error_sum)
+        error_sum[MOTOR_DC_LEFT] = limit_error_sum;
+    else if (error_sum[MOTOR_DC_LEFT] < -limit_error_sum)
+        error_sum[MOTOR_DC_LEFT] = -limit_error_sum;
+    if (error_sum[MOTOR_DC_RIGHT] > limit_error_sum)
+        error_sum[MOTOR_DC_RIGHT] = limit_error_sum;
+    else if (error_sum[MOTOR_DC_RIGHT] < -limit_error_sum)
+        error_sum[MOTOR_DC_RIGHT] = -limit_error_sum;
+
+    // error를 통해 p_term(proportional term, 비례항)를 구한다.
+    p_term[MOTOR_DC_LEFT] = k_p * error[MOTOR_DC_LEFT];
+    p_term[MOTOR_DC_RIGHT] = k_p * error[MOTOR_DC_RIGHT];
+
+    // error의 누적을 통해 i_term(integral term, 적분항)를 구한다.
+    i_term[MOTOR_DC_LEFT] = k_i * error_sum[MOTOR_DC_LEFT];
+    i_term[MOTOR_DC_RIGHT] = k_i * error_sum[MOTOR_DC_RIGHT];
+
+    // error의 미분(error - pre_error)을 통해 d_term(derivative term, 미분항)를 구한다.
+    // 이때 미분항의 노이즈를 줄이기위해 low pass filter을 거친다.
+    // low pass filter : f(x) = x*c/(x+c) -> x == c일 때 아웃풋이 x/2인 분수함수형의 low pass filter이다.
+
+    // 논의점 1 low pass filter가 필요한가?
+    // 논의점 2 d_term이 필요한가? 
+    d_error[MOTOR_DC_LEFT] = error[MOTOR_DC_LEFT] - pre_error[MOTOR_DC_LEFT];
+    d_error[MOTOR_DC_RIGHT] = error[MOTOR_DC_RIGHT] - pre_error[MOTOR_DC_RIGHT];
+    d_term[MOTOR_DC_LEFT] = k_d * lpf_const * d_error[MOTOR_DC_LEFT] / (lpf_const + d_error[MOTOR_DC_LEFT]);
+    d_term[MOTOR_DC_RIGHT] = k_d * lpf_const * d_error[MOTOR_DC_RIGHT] / (lpf_const + d_error[MOTOR_DC_RIGHT]);
+
+    // 비례항 적분항 미분항의 합을 전압으로 설정한다. 이를 각 모터에 인가한다.
+    // 이때 dt_us를 곱하는데, 이는 dt에 대해 p,i,d term이 독립하도록 하기 위해서이다.
+    pid[MOTOR_DC_LEFT] = dt_us * (p_term[MOTOR_DC_LEFT] + i_term[MOTOR_DC_LEFT] + d_term[MOTOR_DC_LEFT]);
+    pid[MOTOR_DC_RIGHT] = dt_us * (p_term[MOTOR_DC_RIGHT] + i_term[MOTOR_DC_RIGHT] + d_term[MOTOR_DC_RIGHT]);
+    motor_dc_input_voltage(MOTOR_DC_LEFT, pid[MOTOR_DC_LEFT], voltage);
+    motor_dc_input_voltage(MOTOR_DC_RIGHT, pid[MOTOR_DC_RIGHT], -voltage);
+    // 마지막줄 함수에서 오른쪽 모터에 -를 붙여 전압을 반대로 준다.
+    // 만약 이것(-부호)이 없을 때 원하는 회전 방향과 반대의 전압을 인가하기 때문이다.
 }

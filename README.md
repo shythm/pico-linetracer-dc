@@ -59,3 +59,13 @@ Ubuntu 20.04 환경에서 Raspberry Pi Pico 개발 환경을 구축할 수 있�
     cd build
     cmake ..
     ```
+    
+## 개발중 논의점
+
+1. D term에 Low pass filter이 필요한가?
+
+
+2. DC motor 제어에 D term이 필요한가?
+
+
+3. PID 제어에는 Dead zone이 필요 없다.
