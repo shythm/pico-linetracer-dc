@@ -22,7 +22,7 @@
 
 void sensing_init(void);
 
-extern volatile float voltage; // 배터리 전압
+extern volatile float voltage; // 감지된 배터리 전압
 void sensing_voltage(void);
 
 extern volatile uint sensor_raw[16];

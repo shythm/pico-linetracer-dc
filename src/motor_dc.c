@@ -119,6 +119,8 @@ void update_velocity_from_encoder(void) {
     cur_tick[MOTOR_DC_RIGHT] = get_encoder_count(MOTOR_DC_RIGHT);
 
     // dt_us(us)전에 측정한 틱 수를 현재 틱 수에서 뺀 수에 velo_param을 곱하여 현재 속도를 구한다.
+    // 여기서 왼쪽 모터의 속도를 구하는 데 (현재 틱수-이전 틱수)에 -를 붙인다. 
+    // 그 이유는 실제 전진하는 회전 방향과 엔코더의 틱이 올라가는 회전 방향이 반대이기 때문이다
     cur_velo[MOTOR_DC_LEFT] = -(cur_tick[MOTOR_DC_LEFT] - pre_tick[MOTOR_DC_LEFT]) * velo_param;
     cur_velo[MOTOR_DC_RIGHT] = (cur_tick[MOTOR_DC_RIGHT] - pre_tick[MOTOR_DC_RIGHT]) * velo_param;
 
@@ -127,8 +129,8 @@ void update_velocity_from_encoder(void) {
     pre_tick[MOTOR_DC_RIGHT] = cur_tick[MOTOR_DC_RIGHT];
 }
 
-float tar_velo[MOTOR_DC_COUNT];      // 각 모터에 대한 목표 속도(m/s)
-float target_velocity;  // 목표 속도 (두 모터의 목표 평균 속도)
+float tar_velo[MOTOR_DC_COUNT]; // 각 모터에 대한 목표 속도(m/s)
+float target_velocity;          // 목표 속도 (두 모터의 목표 평균 속도)
 
 void set_target_velocity(float target_vel) {
     target_velocity = target_vel;
@@ -138,13 +140,13 @@ float get_target_velocity(void) {
     return target_velocity;
 }
 
-const float k_p = 0.005f;             // P 비례상수
-const float k_i = 0.005f;             // I 비례상수
-const float k_d = 0.003f;            // D 비례상수
-const float limit_error_sum = 10.f;  // error_sum을 제한하는 상수
-const float lpf_const = 0.1f;        // low pass filter의 감도를 설정하는 상수
-float error_sum[MOTOR_DC_COUNT] = {0,};    // 에러의 누적을 저장하는 변수
-float error[MOTOR_DC_COUNT];        // 에러를 저장하는 변수
+const float k_p = 0.005f;               // P 비례상수
+const float k_i = 0.005f;               // I 비례상수
+const float k_d = 0.003f;               // D 비례상수
+const float limit_error_sum = 10.f;     // error_sum을 제한하는 상수
+const float lpf_const = 0.1f;           // low pass filter의 감도를 설정하는 상수
+float error_sum[MOTOR_DC_COUNT] = {0,}; // 에러의 누적을 저장하는 변수
+float error[MOTOR_DC_COUNT];            // 에러를 저장하는 변수
 
 void motor_dc_control_enabled(bool enabled) {
     if (enabled) {
@@ -154,7 +156,7 @@ void motor_dc_control_enabled(bool enabled) {
         timer_periodic_start(1, dt_us, motor_dc_control);  // dc모터 제어 interrupt 시작
     } else {
         set_target_velocity(0);                      // 목표 속도 0으로 설정
-        sleep_ms(1000);                              // 목표 속도에 도달하는 시간을 기다려준다.
+        sleep_ms(250);                               // 목표 속도에 도달하는 시간을 기다려준다.
         motor_dc_set_enabled(MOTOR_DC_LEFT, false);  // 왼쪽 모터 드라이버에 PWM 신호 인가 종료
         motor_dc_set_enabled(MOTOR_DC_RIGHT, false); // 오른쪽 모터 드라이버에 PWM 신호 인가 종료
         timer_periodic_stop(1);                      // dc모터 제어 interrupt 중지
@@ -163,9 +165,9 @@ void motor_dc_control_enabled(bool enabled) {
 
 void motor_dc_control(void) {
     float p_term[MOTOR_DC_COUNT], i_term[MOTOR_DC_COUNT], d_term[MOTOR_DC_COUNT];  // 각각 비례항, 적분항, 미분항
-    float d_error[MOTOR_DC_COUNT];         // 에러의 미분값(derivative of error)을 저장하는 변수
-    float pre_error[MOTOR_DC_COUNT];       // 에러의 미분값을 구하기 위해 dt_us(us)전의 에러를 저장하는 변수
-    float pid[MOTOR_DC_COUNT];
+    float d_error[MOTOR_DC_COUNT];   // 에러의 미분값(derivative of error)을 저장하는 변수
+    float pre_error[MOTOR_DC_COUNT]; // 에러의 미분값을 구하기 위해 dt_us(us)전의 에러를 저장하는 변수
+    float pid[MOTOR_DC_COUNT];       // 비례항 적분항 미분항의 합에 비례하는 최종적으로 인가할 전압을 저장하는 변수
 
     // 각 모터에 대한 현재 속도를 측정한다.
     update_velocity_from_encoder();
@@ -219,4 +221,6 @@ void motor_dc_control(void) {
     pid[MOTOR_DC_RIGHT] = dt_us * (p_term[MOTOR_DC_RIGHT] + i_term[MOTOR_DC_RIGHT] + d_term[MOTOR_DC_RIGHT]);
     motor_dc_input_voltage(MOTOR_DC_LEFT, pid[MOTOR_DC_LEFT], voltage);
     motor_dc_input_voltage(MOTOR_DC_RIGHT, pid[MOTOR_DC_RIGHT], -voltage);
+    // 마지막줄 함수에서 오른쪽 모터에 -를 붙여 전압을 반대로 준다.
+    // 만약 이것(-부호)이 없을 때 원하는 회전 방향과 반대의 전압을 인가하기 때문이다.
 }
