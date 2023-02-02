@@ -1,44 +1,65 @@
 # PICO Linetracer DC
 
-## 개발 환경 구축
+## 리눅스 환경에서 개발 환경 구축
+Ubuntu 20.04 환경에서 Raspberry Pi Pico 개발 환경을 구축할 수 있다.
 
-1. ARM 크로스 컴파일러 다운로드
+1. 빌드 필수 패키지를 설치한다.
+    
+    ```bash
+    sudo apt update
+    sudo apt install git wget cmake build-essential
+    ```
+    
+1. ARM 크로스 컴파일러를 설치한다.
+    - [Arm GNU Toolchain Downloads](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads)에서 자신에게 맞는 운영체제의 Toolchain를 다운받는다. 보통 x86 시스템의 리눅스 환경을 많이 사용하며, 아래의 명령어로 다운로드 받을 수 있다.
+    
+    ```bash
+    wget https://developer.arm.com/-/media/Files/downloads/gnu/12.2.rel1/binrel/arm-gnu-toolchain-12.2.rel1-x86_64-arm-none-eabi.tar.xz
+    ```
+    
+    - 다운로드 받은 압축 파일을 `/opt/arm-gnu-toolchain` 디렉터리에 푼다.
+    
+    ```bash
+    sudo mkdir /opt/arm-gnu-toolchain
+    sudo tar xvf arm-gnu-toolchain-12.2.rel1-x86_64-arm-none-eabi.tar.xz -C /opt/arm-gnu-toolchain --strip-components=1
+    ```
+    
+    - 크로스 컴파일러에 접근할 수 있도록 환경 변수를 설정한다.
+    
+    ```bash
+    echo "export PATH=\$PATH:/opt/arm-gnu-toolchain/bin" >> ~/.bashrc
+    source ~/.profile
+    ```
+    
+    - 아래와 같이 `arm-none-eabi-gcc --version` 명령어를 수행해서 버전 정보가 잘 나온다면 설치가 된 것이며, 설치가 끝났으므로 `rm` 명령어를 이용해서 Toolchain 압축 파일을 삭제한다.
+    
+    ```
+    $ arm-none-eabi-gcc --version
+    arm-none-eabi-gcc (Arm GNU Toolchain 12.2.Rel1 (Build arm-12.24)) 12.2.1 20221205
+    Copyright (C) 2022 Free Software Foundation, Inc.
+    This is free software; see the source for copying conditions.  There is NO
+    warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+    
+    $ rm arm-gnu-toolchain-12.2.rel1-x86_64-arm-none-eabi.tar.xz
+    ```
+    
+1. 프로젝트 디렉터리 안에서 pico-sdk를 내려받는다. 그리고 pico-sdk 디렉터리로 들어가 submodule을 다운로드 받는다.
+    
+    ```bash
+    git clone https://github.com/raspberrypi/pico-sdk
+    cd pico-sdk
+    git submodule update --init
+    cd ..
+    ```
+    
+1. build 디렉터리를 만들어서 cmake를 수행한다.
 
-[ARM 공식 홈페이지](https://developer.arm.com/downloads/-/gnu-rm)에서 자신에게 맞는 운영체제의 컴파일러를 다운받는다. 보통 x86 시스템의 리눅스 환경을 많이 사용하므로, 아래의 명령어를 통해 다운로드할 수 있다.
-
-```sh
-$ wget https://developer.arm.com/-/media/Files/downloads/gnu-rm/10.3-2021.10/gcc-arm-none-eabi-10.3-2021.10-x86_64-linux.tar.bz2
-```
-
-2. ARM 크로스 컴파일러 설치
-
-다운로드한 컴파일러의 압축을 풀고, 터미널에서 해당 바이너리로 접근할 수 있도록 환경변수를 설정해준다. 이때 pico에서 사용하는 컴파일러 경로 환경변수 이름은 `PICO_TOOLCHAIN_PATH`이다. 참고로 아래 명령어 수행 후 터미널을 재시작 해줘야 환경변수가 제대로 적용된다.
-
-```sh
-$ sudo tar -xvf gcc-arm-none-eabi-10.3-2021.10-x86_64-linux.tar.bz2 -C /usr/share
-
-$ echo "export PICO_TOOLCHAIN_PATH=/usr/share/gcc-arm-none-eabi-10.3-2021.10" >> ~/.bashrc
-```
-
-3. pico-sdk 내려받기
-
-```sh
-$ git clone https://github.com/raspberrypi/pico-sdk
-```
-
-4. 필요한 바이너리 설치
-
-```sh
-$ sudo apt install build-essential cmake
-```
-
-5. build 폴더 만들고, CMake 수행
-
-```sh
-$ mkdir build
-$ cd build
-$ cmake ..
-```
+    ```bash
+    mkdir build
+    cd build
+    cmake ..
+    ```
+    
 ## 개발중 논의점
 
 1. D term에 Low pass filter이 필요한가?
