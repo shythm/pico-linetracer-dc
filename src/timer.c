@@ -38,12 +38,12 @@ inline static void timer_set_alarm(uint num, uint interval) {
  * 3. Alarm IRQ를 설정한다.
  * 4. 다음 주기에 Alarm이 수행되도록 설정한다.
  */
-#define TIMER_IRQ_HANDLER(NUM) \
-    static void timer_irq_handler_##NUM(void) { \
-        hw_clear_bits(&timer_hw->intr, 1u << NUM); \
-        timer_periodic_handlers[NUM](); \
-        hw_set_bits(&timer_hw->inte, 1u << NUM); \
+#define TIMER_IRQ_HANDLER(NUM)                               \
+    static void timer_irq_handler_##NUM(void) {              \
         timer_set_alarm(NUM, timer_periodic_intervals[NUM]); \
+        hw_clear_bits(&timer_hw->intr, 1u << NUM);           \
+        timer_periodic_handlers[NUM]();                      \
+        hw_set_bits(&timer_hw->inte, 1u << NUM);             \
 }
 
 // 총 4개의 Alarm IRQ 핸들러 등록
