@@ -1,20 +1,18 @@
 /**
  * @file timer.c
  * @author Seongho Lee
- * @brief Raspberry Pi Pico의 Alarm 기능을 이용하여 주기적으로 인터럽트를 발생시킬 수 있는 기능을 제공하는 라이브러리
- */
-#include "pico/stdlib.h"
-#include "hardware/timer.h"
-#include "hardware/irq.h"
-
-/*
+ * @brief Raspberry Pi Pico의 Alarm을 이용하여 주기적으로 인터럽트를 발생시킬 수 있는 기능을 제공하는 라이브러리
+ *
  * Raspberry Pi Pico에는 지정된 주기마다 인터럽트를 발생시키는 기능이 "없다".
- * 하지만 Timer 내부에 Alarm이라는 기능이 있으며, 이 기능을 이용해서 Timer의 값이
- * 지정된 값에 도달할 때 인터럽트를 발생시킬 수 있다. 아래는 Alarm을 적절히 사용하여
- * 일정 주기마다 인터럽트를 발생시키는 기능을 구현한다.
- * 
- * 참고로, Raspberry Pi Pico에는 Timer가 하나이고 여기에 총 4개의 Alarm이 존재한다.
+ * 하지만 Timer 내부에 Alarm이라는 기능을 이용하여 Timer의 값이 정된 값에 도달할 때 인터럽트를 발생시킬 수 있다.
+ * Alarm은 "1us마다 1씩 증가하는 Timer 카운터"가 지정된 값에 도달하면 IRQ를 발생시키는 기능을 제공한다.
+ * 여기서 Timer는 하나이고, 이 Timer에 4개의 Alarm이 존재한다. 그래서 주기가 다른 각 4개의 IRQ를 생성할 수 있다.
+ * 아래의 소스코드들은 Alarm을 적절히 사용하여 일정 주기마다 인터럽트를 발생시키는 기능을 구현한다.
  */
+#include "hardware/timer.h"
+
+#include "hardware/irq.h"
+#include "pico/stdlib.h"
 
 // 각 인터럽트의 주기들
 uint timer_periodic_intervals[4];
@@ -23,9 +21,10 @@ uint timer_periodic_intervals[4];
 static void (*timer_periodic_handlers[4])(void);
 
 /*
- * Timer의 Alarm 값을 [(현재 Timer 값) + (interval)]로 설정하여 (interval)가 지난 후
- * Alarm 기능이 동작하도록 설정한다. 즉, 인터럽트를 발생시킨다. 한편, 일정 주기로 인터럽트를
- * 발생시키기 위해서는 해당 함수를 인터럽트 함수가 끝날 때마다 실행시켜주면 된다.
+ * Timer의 Alarm 값을 [(현재 Timer 값) + (interval)]로 설정하여 (interval)가
+ * 지난 후 Alarm 기능이 동작하도록 설정한다. 즉, 인터럽트를 발생시킨다. 한편,
+ * 일정 주기로 인터럽트를 발생시키기 위해서는 해당 함수를 인터럽트 함수가 끝날
+ * 때마다 실행시켜주면 된다.
  */
 inline static void timer_set_alarm(uint num, uint interval) {
     timer_hw->alarm[num] = timer_hw->timerawl + interval;
@@ -44,7 +43,7 @@ inline static void timer_set_alarm(uint num, uint interval) {
         hw_clear_bits(&timer_hw->intr, 1u << NUM);           \
         timer_periodic_handlers[NUM]();                      \
         hw_set_bits(&timer_hw->inte, 1u << NUM);             \
-}
+    }
 
 // 총 4개의 Alarm IRQ 핸들러 등록
 TIMER_IRQ_HANDLER(0);
