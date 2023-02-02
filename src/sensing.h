@@ -3,14 +3,14 @@
 
 #include "pico/types.h"
 
-#define SENSING_VOLTAGE_GPIO  26
+#define SENSING_VOLTAGE_GPIO 26
 
-#define SENSING_IR_MUX_SEL0_GPIO  6
-#define SENSING_IR_MUX_SEL1_GPIO  7
-#define SENSING_IR_MUX_SEL2_GPIO  8
-#define SENSING_IR_IN_MUXA_GPIO   27
-#define SENSING_IR_IN_MUXB_GPIO   28
-#define SENSING_IR_OUT_MUX_GPIO   9
+#define SENSING_IR_MUX_SEL0_GPIO 6
+#define SENSING_IR_MUX_SEL1_GPIO 7
+#define SENSING_IR_MUX_SEL2_GPIO 8
+#define SENSING_IR_IN_MUXA_GPIO  27
+#define SENSING_IR_IN_MUXB_GPIO  28
+#define SENSING_IR_OUT_MUX_GPIO  9
 
 // Base pin to connect the A phase of the encoder.
 // The B phase must be connected to the next pin

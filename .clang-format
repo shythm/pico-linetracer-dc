@@ -1,0 +1,10 @@
+---
+SortIncludes: false
+AlignConsecutiveMacros: true
+PointerAlignment: Right
+AlignTrailingComments: false
+ColumnLimit: 0
+IndentWidth: 4
+ContinuationIndentWidth: 4
+Cpp11BracedListStyle: false
+...

@@ -12,6 +12,11 @@
 #include "hardware/gpio.h"
 #include "hardware/spi.h"
 
+/* clang-format off */
+
+/**
+ * @brief SSD1331 OLED 모듈의 명령어 모음
+ */
 enum oled_command {
     OLED_CMD_SETCOLUMN      = 0x15,    // Set column address
     OLED_CMD_DRAWLINE       = 0x21,    // Draw line
@@ -43,17 +48,18 @@ enum oled_command {
     OLED_CMD_PRECHARGELEVEL = 0xBB,    // Set pre-charge voltage
     OLED_CMD_VCOMH          = 0xBE,    // Set Vcomh voltge
 };
+/* clang-format on */
 
 #define OLED_DISPLAY_WIDTH  96
 #define OLED_DISPLAY_HEIGHT 64
 
-#define OLED_UNIT_WIDTH     8
-#define OLED_UNIT_HEIGHT    8
-#define OLED_UNIT_AREA      OLED_UNIT_WIDTH * OLED_UNIT_HEIGHT
+#define OLED_UNIT_WIDTH  8
+#define OLED_UNIT_HEIGHT 8
+#define OLED_UNIT_AREA   OLED_UNIT_WIDTH *OLED_UNIT_HEIGHT
 
 static inline void oled_write_command(const uint8_t *command, size_t length) {
     gpio_put(OLED_CS_GPIO, 0);
-    gpio_put(OLED_DC_GPIO, 0);  // 0 is command mode
+    gpio_put(OLED_DC_GPIO, 0); // 0 is command mode
 
     spi_write_blocking(OLED_SPI_INSTANCE, command, length);
 
@@ -62,7 +68,7 @@ static inline void oled_write_command(const uint8_t *command, size_t length) {
 
 static inline void oled_write_data(const uint8_t *data, size_t length) {
     gpio_put(OLED_CS_GPIO, 0);
-    gpio_put(OLED_DC_GPIO, 1);  // 1 is data mode
+    gpio_put(OLED_DC_GPIO, 1); // 1 is data mode
 
     spi_write_blocking(OLED_SPI_INSTANCE, data, length);
 
@@ -86,7 +92,7 @@ static inline void oled_reset_address(void) {
     oled_set_address(0, 0, OLED_DISPLAY_WIDTH - 1, OLED_DISPLAY_HEIGHT - 1);
 }
 
-static inline void oled_putc(char c) {    
+static inline void oled_putc(char c) {
     uint16_t data[FONT_WIDTH * FONT_HEIGHT];
     const char *font = fonts[c - FONT_START];
 
@@ -120,14 +126,14 @@ void oled_init(void) {
     // https://github.com/adafruit/Adafruit-SSD1331-OLED-Driver-Library-for-Arduino
     const uint8_t init_cmd[] = {
         OLED_CMD_DISPLAYOFF,
-        OLED_CMD_SETREMAP, 0x73,    // 1b, Vertical address increment
-                                    // 1b, RAM Column 0 to 95 maps to Pin Seg (SA,SB,SC) 95 to 0
-                                    // 0b, normal order SA,SB,SC (e.g. RGB)
-                                    // 0b, Disable left-right swapping on COM
-                                    // 1b, Scan from COM [N-1] to COM0. Where N is the multiplex ratio.
-                                    // 1b, Enable COM Split Odd Even
-                                    // 1b, 
-                                    // 0b, 65k color format
+        OLED_CMD_SETREMAP, 0x73, // 1b, Vertical address increment
+                                 // 1b, RAM Column 0 to 95 maps to Pin Seg (SA,SB,SC) 95 to 0
+                                 // 0b, normal order SA,SB,SC (e.g. RGB)
+                                 // 0b, Disable left-right swapping on COM
+                                 // 1b, Scan from COM [N-1] to COM0. Where N is the multiplex ratio.
+                                 // 1b, Enable COM Split Odd Even
+                                 // 1b,
+                                 // 0b, 65k color format
         OLED_CMD_STARTLINE, 0x00,
         OLED_CMD_DISPLAYOFFSET, 0x00,
         OLED_CMD_NORMALDISPLAY,
@@ -180,8 +186,7 @@ void oled_set_cursor(uint8_t row, uint8_t col) {
         col * (OLED_DISPLAY_WIDTH / OLED_UNIT_WIDTH),
         row * (OLED_DISPLAY_HEIGHT / OLED_UNIT_HEIGHT),
         OLED_DISPLAY_WIDTH,
-        row * (OLED_DISPLAY_HEIGHT / OLED_UNIT_HEIGHT) + OLED_UNIT_HEIGHT - 1
-    );
+        row * (OLED_DISPLAY_HEIGHT / OLED_UNIT_HEIGHT) + OLED_UNIT_HEIGHT - 1);
 }
 
 void oled_printf(const char *format, ...) {
@@ -200,8 +205,14 @@ void oled_printf(const char *format, ...) {
         if (command_flag) {
             // 슬래시 문자 다음에 오는 명령 문자에 대해 처리한다.
             switch (*str) {
-            case '0': case '1': case '2': case '3':
-            case '4': case '5': case '6': case '7':
+            case '0':
+            case '1':
+            case '2':
+            case '3':
+            case '4':
+            case '5':
+            case '6':
+            case '7':
                 // 0에서 7 사이의 문자가 올 때 출력을 진행할 행을 결정한다.
                 oled_set_cursor(*str - '0', 0);
                 break;

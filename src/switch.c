@@ -27,10 +27,10 @@ switch_state_t switch_state[SWITCH_COUNT] = {
     { .gpio = SWITCH_RIGHT_GPIO },
 };
 
-#define SWITCH_STATE_LONG_OFF   0x01  // 0001
-#define SWITCH_STATE_SHORT_ON   0x02  // 0010
-#define SWITCH_STATE_LONG_ON    0x04  // 0100
-#define SWITCH_STATE_SHORT_OFF  0x08  // 1000
+#define SWITCH_STATE_LONG_OFF  0x01 // 0001
+#define SWITCH_STATE_SHORT_ON  0x02 // 0010
+#define SWITCH_STATE_LONG_ON   0x04 // 0100
+#define SWITCH_STATE_SHORT_OFF 0x08 // 1000
 
 static bool switch_state_machine(switch_state_t *pstate) {
     /*
@@ -59,7 +59,7 @@ static bool switch_state_machine(switch_state_t *pstate) {
      * Long-On 상태에서는 버튼이 떼질 경우 Short-Off 상태로 진입한다.
      * Short-Off 상태에서는 바운싱을 방지하기 위해 모든 상태 변화를 무시한다.
      * Short-Off 상태가 끝나면 Long-Off로 진입한다. 떼는 이벤트도 발생시킬 수 있기는 하겠으나, 굳이 필요하지 않으므로 발생시키지 않기로 한다.
-     * 
+     *
      * 한편, 버튼을 오랫동안 누르고 있을 때의 이벤트 발생 조건에 대해 고려하자.
      * 오랫동안 버튼을 누르고 있을 때에는 충분히 긴 기간동안 눌렸다면 이벤트가 한 번 더 발생하면 된다.
      * 그러므로 Long-On 상태에 있을 때 타이머를 하나 둔 후, 만약 그 타이머가 0 이하로 떨어질 경우 이벤트를 발생시키고 다시 타이머를 초기화하면 된다.
@@ -159,8 +159,12 @@ switch_event_t switch_read(void) {
     }
 
     switch_event_t ret = 0;
-    if (clicked_l) ret |= SWITCH_EVENT_LEFT;
-    if (clicked_r) ret |= SWITCH_EVENT_RIGHT;
+    if (clicked_l) {
+        ret |= SWITCH_EVENT_LEFT;
+    }
+    if (clicked_r) {
+        ret |= SWITCH_EVENT_RIGHT;
+    }
 
     return ret;
 }
@@ -170,8 +174,10 @@ switch_event_t switch_read_wait_ms(uint ms) {
     // 아래의 반복문을 ms만큼 도는 것이 ms만큼 기다리는 것과 동등한 행위가 된다.
     for (int i = 0; i < ms; i++) {
         switch_event_t sw = switch_read();
-        if (sw) return sw;
+        if (sw) {
+            return sw;
+        }
     }
-    
+
     return SWITCH_EVENT_NONE;
 }
