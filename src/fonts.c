@@ -1,3 +1,5 @@
+// clang-format off
+
 #include "fonts.h"
 #include "pico/types.h"
 
