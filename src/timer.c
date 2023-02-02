@@ -1,3 +1,8 @@
+/**
+ * @file timer.c
+ * @author Seongho Lee
+ * @brief Raspberry Pi Pico의 Alarm 기능을 이용하여 주기적으로 인터럽트를 발생시킬 수 있는 기능을 제공하는 라이브러리
+ */
 #include "pico/stdlib.h"
 #include "hardware/timer.h"
 #include "hardware/irq.h"
@@ -23,7 +28,7 @@ static void (*timer_periodic_handlers[4])(void);
  * 발생시키기 위해서는 해당 함수를 인터럽트 함수가 끝날 때마다 실행시켜주면 된다.
  */
 inline static void timer_set_alarm(uint num, uint interval) {
-  timer_hw->alarm[num] = timer_hw->timerawl + interval;
+    timer_hw->alarm[num] = timer_hw->timerawl + interval;
 }
 
 /*
@@ -34,11 +39,11 @@ inline static void timer_set_alarm(uint num, uint interval) {
  * 4. 다음 주기에 Alarm이 수행되도록 설정한다.
  */
 #define TIMER_IRQ_HANDLER(NUM) \
-  static void timer_irq_handler_##NUM(void) { \
-    hw_clear_bits(&timer_hw->intr, 1u << NUM); \
-    timer_periodic_handlers[NUM](); \
-    hw_set_bits(&timer_hw->inte, 1u << NUM); \
-    timer_set_alarm(NUM, timer_periodic_intervals[NUM]); \
+    static void timer_irq_handler_##NUM(void) { \
+        hw_clear_bits(&timer_hw->intr, 1u << NUM); \
+        timer_periodic_handlers[NUM](); \
+        hw_set_bits(&timer_hw->inte, 1u << NUM); \
+        timer_set_alarm(NUM, timer_periodic_intervals[NUM]); \
 }
 
 // 총 4개의 Alarm IRQ 핸들러 등록
@@ -47,38 +52,38 @@ TIMER_IRQ_HANDLER(1);
 TIMER_IRQ_HANDLER(2);
 TIMER_IRQ_HANDLER(3);
 static const void const (*timer_irq_handlers[4])(void) = {
-  timer_irq_handler_0,
-  timer_irq_handler_1,
-  timer_irq_handler_2,
-  timer_irq_handler_3,
+    timer_irq_handler_0,
+    timer_irq_handler_1,
+    timer_irq_handler_2,
+    timer_irq_handler_3,
 };
 
 // 총 4개의 Alarm IRQ
 static const uint const alarm_irqs[4] = {
-  TIMER_IRQ_0,
-  TIMER_IRQ_1,
-  TIMER_IRQ_2,
-  TIMER_IRQ_3,
+    TIMER_IRQ_0,
+    TIMER_IRQ_1,
+    TIMER_IRQ_2,
+    TIMER_IRQ_3,
 };
 
 void timer_periodic_start(uint num, uint interval, void (*handler)(void)) {
-  // 알람 num에 대한 인터럽트 활성화
-  hw_set_bits(&timer_hw->inte, 1u << num);
+    // 알람 num에 대한 인터럽트 활성화
+    hw_set_bits(&timer_hw->inte, 1u << num);
 
-  // 알람 num에 대한 IRQ 핸들러 추가
-  timer_periodic_handlers[num] = handler;
-  irq_set_exclusive_handler(num, timer_irq_handlers[num]);
+    // 알람 num에 대한 IRQ 핸들러 추가
+    timer_periodic_handlers[num] = handler;
+    irq_set_exclusive_handler(num, timer_irq_handlers[num]);
 
-  // IRQ 활성화
-  irq_set_enabled(alarm_irqs[num], true);
+    // IRQ 활성화
+    irq_set_enabled(alarm_irqs[num], true);
 
-  // Alarm 값 설정
-  timer_periodic_intervals[num] = interval;
-  timer_set_alarm(num, interval);
+    // Alarm 값 설정
+    timer_periodic_intervals[num] = interval;
+    timer_set_alarm(num, interval);
 }
 
 void timer_periodic_stop(uint num) {
-  hw_set_bits(&timer_hw->armed, 1u << num);
-  irq_set_enabled(alarm_irqs[num], false);
-  hw_clear_bits(&timer_hw->intr, 1u << num);
+    hw_set_bits(&timer_hw->armed, 1u << num);
+    irq_set_enabled(alarm_irqs[num], false);
+    hw_clear_bits(&timer_hw->intr, 1u << num);
 }
