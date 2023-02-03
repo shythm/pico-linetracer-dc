@@ -1,5 +1,20 @@
+/**
+ * @file motor_dc.h
+ * @author Seongho Lee & Jinoo Li
+ */
+
 #ifndef __MOTOR_DC_H_
 #define __MOTOR_DC_H_
+
+#include "pico/types.h"
+#include "hardware/pio.h"
+#include "timer.h"
+
+#ifdef INCLUDE_MOTOR_DC_CONSTANTS
+
+/**
+ * DC 모터 관련 상수들
+ */
 
 #define MOTOR_DC_PWM_LEFT_GPIO        14
 #define MOTOR_DC_PWM_RIGHT_GPIO       15
@@ -14,17 +29,44 @@
 // 이는 트랜지스터의 전형적인 특징이며, 이를 보정하기 위해 신호가 인식되는 최소한의 duty cycle을 정의한다.
 #define MOTOR_DC_PWM_DEAD_ZONE 40
 
-#define K_PROPORTIONAL 1.1
-#define K_INTEGRAL     1.1
-#define K_DERIVATIVE   1.1
+/**
+ * 엔코더 관련 상수들
+ */
 
-enum motor_index {
+#define MOTOR_ENCODER_PIO             pio0
+#define MOTOR_ENCODER_BASE_LEFT_GPIO  10 // 왼쪽 모터 엔코터 A(베이스)핀 (B핀은 항상 그 다음 GPIO이다)
+#define MOTOR_ENCODER_BASE_RIGHT_GPIO 12 // 오른쪽 모터 엔코더 A(베이스)핀 (B핀은 항상 그 다음 GPIO이다)
+#define MOTOR_ENCODER_RESOLUTION      2048
+#define MOTOR_WHEEL_DIAMETER_M        0.038f // 바퀴의 지름(m)
+#define MOTOR_GEAR_RATIO              17.f / 69.f // 모터(17) / 바퀴(69) 기어비
+
+/**
+ * DC 모터 및 엔코더 방향 보정 상수들
+ */
+
+#define MOTOR_DC_DIRECTION_LEFT  1
+#define MOTOR_DC_DIRECTION_RIGHT -1
+#define MOTOR_ENCODER_REVERSE    true
+
+/**
+ * DC 모터 PID 제어 관련 상수들
+ */
+
+#define MOTOR_DC_GAIN_P            0.005f
+#define MOTOR_DC_GAIN_I            0.005f
+#define MOTOR_DC_GAIN_D            0.003f
+#define MOTOR_DC_ERROR_SUM_LIMIT   10.0f
+#define MOTOR_DC_LPF_CONST         0.1f
+#define MOTOR_DC_TIMER_SLOT        TIMER_SLOT_1
+#define MOTOR_DC_TIMER_INTERVAL_US 500
+
+#endif
+
+enum motor_dc_index {
     MOTOR_DC_LEFT = 0,
     MOTOR_DC_RIGHT,
     MOTOR_DC_COUNT
 };
-
-#include "pico/types.h"
 
 /**
  * @brief DC 모터 드라이버 구동을 위해 PWM의 주기 설정 및 초기화를 진행하고,
@@ -35,44 +77,56 @@ void motor_dc_init(void);
 /**
  * @brief DC 모터 드라이버에 PWM 신호 생성 여부를 결정한다.
  *
- * @param index 왼쪽 모터(MOTOR_DC_LEFT) 또는 오른쪽 모터(MOTOR_DC_RIGHT)
+ * @param index MOTOR_DC_LEFT(왼쪽 모터) 또는 MOTOR_DC_RIGHT(오른쪽 모터)
  * @param enabled PWM 신호 생성 여부
  */
-void motor_dc_set_enabled(enum motor_index index, bool enabled);
+void motor_dc_pwm_enabled(enum motor_dc_index index, bool enabled);
 
 /**
  * @brief DC 모터에 전압을 인가한다.
  *
- * @param index 왼쪽 모터(MOTOR_DC_LEFT) 또는 오른쪽 모터(MOTOR_DC_RIGHT)
+ * @param index MOTOR_DC_LEFT(왼쪽 모터) 또는 MOTOR_DC_RIGHT(오른쪽 모터)
  * @param input_voltage 모터에 인가할 전압
  * @param supply_voltage 모터 드라이버에 공급되는 전압
  */
-void motor_dc_input_voltage(enum motor_index index, float input_voltage, float supply_voltage);
-
-extern float cur_velo[MOTOR_DC_COUNT]; // 각 모터의 현재 속도 (m/s)
-extern float error_sum[MOTOR_DC_COUNT]; // 에러의 누적을 저장하는 변수
+void motor_dc_input_voltage(enum motor_dc_index index, float input_voltage, float supply_voltage);
 
 /**
- * @brief 현재 속도를 업데이트하는 함수. 인터럽트를 사용해 주기적으로 실행해야 제대로 작동한다.
- */
-void update_velocity_from_encoder(void);
-
-/**
- * @brief 목표 속도를 설정한다.
+ * @brief 모터의 속도를 설정한다.
  *
- * @param target_vel 설정할 목표 속도(m/s)
+ * @param index MOTOR_DC_LEFT(왼쪽 모터) 또는 MOTOR_DC_RIGHT(오른쪽 모터)
+ * @param velocity 설정할 모터의 속도 (m/s)
  */
-void set_target_velocity(float target_vel);
+void motor_dc_set_velocity(enum motor_dc_index index, float velocity);
 
 /**
- * @brief 설정한 목표 속도를 가져온다.
- */
-float get_target_velocity(void);
-
-/**
- * @brief dc모터 컨트롤을 하기 전에 관련 파라미터를 초기화한다.
+ * @brief 설정한 모터의 속도를 가져온다.
  *
- * @param enabled 0 : dc모터 제어 종료 / 1 : dc모터 제어 시작
+ * @param index MOTOR_DC_LEFT(왼쪽 모터) 또는 MOTOR_DC_RIGHT(오른쪽 모터)
+ * @return 설정된 모터의 속도
+ */
+float motor_dc_get_velocity(enum motor_dc_index index);
+
+/**
+ * @brief 엔코더로부터 구한 모터의 속도를 가져온다.
+ *
+ * @param index MOTOR_DC_LEFT(왼쪽 모터) 또는 MOTOR_DC_RIGHT(오른쪽 모터)
+ * @return 현재 모터의 속도
+ */
+float motor_dc_get_current_velocity(enum motor_dc_index index);
+
+/**
+ * @brief 엔코더의 현재 틱 수를 가져온다.
+ *
+ * @param index MOTOR_DC_LEFT(왼쪽 모터) 또는 MOTOR_DC_RIGHT(오른쪽 모터)
+ * @return 틱 수
+ */
+uint motor_dc_get_encoder_count(enum motor_dc_index index);
+
+/**
+ * @brief DC 모터 제어 활성화 여부에 따른 초기화 작업을 수행한다.
+ *
+ * @param enabled 0(DC 모터 제어 종료) 또는 1(DC 모터 제어 시작)
  */
 void motor_dc_control_enabled(bool enabled);
 

@@ -22,7 +22,7 @@ int main(void) {
     oled_init();
     oled_clear_all();
 
-    timer_periodic_start(2, 500, sensing_handler);
+    timer_periodic_start(TIMER_SLOT_0, 500, sensing_handler);
 
     float tv = 0.f;
     bool motor_enabled = false;
@@ -37,17 +37,16 @@ int main(void) {
         } else if (sw == SWITCH_EVENT_BOTH) {
             motor_enabled = !motor_enabled;
 
-            motor_dc_control_enabled(motor_enabled);
             oled_clear_all();
+            motor_dc_control_enabled(motor_enabled);
         }
-        set_target_velocity(tv);
+        motor_dc_set_velocity(MOTOR_DC_LEFT, tv);
+        motor_dc_set_velocity(MOTOR_DC_RIGHT, tv);
 
         if (motor_enabled) {
             oled_printf("/0tv: %2.2f", tv);
-            oled_printf("/1spdl:%2.4f", cur_velo[0]);
-            oled_printf("/2spdr:%2.4f", cur_velo[1]);
-            oled_printf("/3ersl:%2.1f", error_sum[0]);
-            oled_printf("/4ersr:%2.1f", error_sum[1]);
+            oled_printf("/1spdl:%2.2f", motor_dc_get_current_velocity(MOTOR_DC_LEFT));
+            oled_printf("/2spdr:%2.2f", motor_dc_get_current_velocity(MOTOR_DC_RIGHT));
         } else {
             oled_printf("/0motor disabl/1ced.");
             oled_printf("/2%ld", clock_get_hz(clk_sys));

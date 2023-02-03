@@ -3,17 +3,6 @@
 #include "hardware/gpio.h"
 #include "hardware/adc.h"
 #include "hardware/sync.h"
-#include "hardware/pio.h"
-
-#include "quadrature_encoder.pio.h"
-
-const PIO encoder_pio[2] = { pio0, pio1 };
-uint encoder_pio_offset[2];
-uint encoder_pio_sm[2];
-uint encoder_pio_pin[2] = {
-    SENSING_ENCODER_LAB_GPIO,
-    SENSING_ENCODER_RAB_GPIO
-};
 
 void sensing_init(void) {
     // ADC Block 초기화
@@ -33,19 +22,6 @@ void sensing_init(void) {
     gpio_set_dir(SENSING_IR_MUX_SEL2_GPIO, GPIO_OUT);
     gpio_init(SENSING_IR_OUT_MUX_GPIO);
     gpio_set_dir(SENSING_IR_OUT_MUX_GPIO, GPIO_OUT);
-
-    // 엔코더 초기화
-    for (uint i = 0; i < 2; i++) {
-        encoder_pio_offset[i] = pio_add_program(
-            encoder_pio[i],
-            &quadrature_encoder_program);
-        quadrature_encoder_program_init(
-            encoder_pio[i],
-            encoder_pio_sm[i],
-            encoder_pio_offset[i],
-            encoder_pio_pin[i],
-            0);
-    }
 }
 
 #define GET_ADC_CHANNEL(GPIO_PIN) ((GPIO_PIN) - (26))
@@ -165,10 +141,4 @@ void sensing_infrared(void) {
     sensor_normalized[i + 8] = 0xff * (raw_r - sensor_coef_bias[i + 8]) / sensor_coef_range[i + 8];
 
     i = (i + 1) & 0x07;
-}
-
-inline uint get_encoder_count(uint num) {
-    return quadrature_encoder_get_count(
-        encoder_pio[num],
-        encoder_pio_sm[num]);
 }

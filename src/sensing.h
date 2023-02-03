@@ -12,11 +12,6 @@
 #define SENSING_IR_IN_MUXB_GPIO  28
 #define SENSING_IR_OUT_MUX_GPIO  9
 
-// Base pin to connect the A phase of the encoder.
-// The B phase must be connected to the next pin
-#define SENSING_ENCODER_LAB_GPIO 10
-#define SENSING_ENCODER_RAB_GPIO 12
-
 // ADC로부터 얻은 데이터를 실제 전압으로 바꿔주는 계산식
 #define SENSING_EXPR_RAW_TO_VOLTAGE(X) ((3.3f / 4096.0f * 21.0f / 1.0f) * (X))
 
@@ -30,7 +25,5 @@ extern volatile uint sensor_coef_bias[16];
 extern volatile uint sensor_coef_range[16];
 extern volatile uint sensor_normalized[16];
 void sensing_infrared(void);
-
-uint get_encoder_count(uint num);
 
 #endif
