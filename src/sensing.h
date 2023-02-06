@@ -18,6 +18,8 @@
 void sensing_init(void);
 
 extern volatile float voltage; // 감지된 배터리 전압
+extern volatile uint sensor_coef_bias[16]; // 블랙 맥스(=편향값)
+extern volatile uint sensor_coef_range[16]; // 센서값 범위(화이트 맥스 - 블랙 맥스)
 void sensing_voltage(void);
 
 extern volatile uint sensor_raw[16];

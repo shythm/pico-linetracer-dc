@@ -97,15 +97,25 @@ void sensing_voltage(void) {
 #define IMS1 (1 << SENSING_IR_MUX_SEL1_GPIO)
 #define IMS2 (1 << SENSING_IR_MUX_SEL2_GPIO)
 
+// static const uint sensor_order[8] = {
+//     0x00 | 0x00 | 0x00, // 000
+//     0x00 | 0x00 | IMS0, // 001
+//     0x00 | IMS1 | 0x00, // 010
+//     0x00 | IMS1 | IMS0, // 011
+//     IMS2 | 0x00 | 0x00, // 100
+//     IMS2 | 0x00 | IMS0, // 101
+//     IMS2 | IMS1 | 0x00, // 110
+//     IMS2 | IMS1 | IMS0, // 111
+// };
 static const uint sensor_order[8] = {
-    0x00 | 0x00 | 0x00, // 000
-    0x00 | 0x00 | IMS0, // 001
-    0x00 | IMS1 | 0x00, // 010
-    0x00 | IMS1 | IMS0, // 011
-    IMS2 | 0x00 | 0x00, // 100
-    IMS2 | 0x00 | IMS0, // 101
-    IMS2 | IMS1 | 0x00, // 110
     IMS2 | IMS1 | IMS0, // 111
+    IMS2 | IMS1 | 0x00, // 110
+    IMS2 | 0x00 | IMS0, // 101
+    IMS2 | 0x00 | 0x00, // 100
+    0x00 | IMS1 | IMS0, // 011
+    0x00 | IMS1 | 0x00, // 010
+    0x00 | 0x00 | IMS0, // 001
+    0x00 | 0x00 | 0x00, // 000
 };
 static const uint sensor_mask = IMS0 | IMS1 | IMS2;
 
@@ -128,8 +138,8 @@ void sensing_infrared(void) {
 
     gpio_put(SENSING_IR_OUT_MUX_GPIO, 1); // IR 발광센서 켜기
     // 두 개의 MUX로부터 ADC 값을 가져옴
-    raw_l = get_adc_data(GET_ADC_CHANNEL(SENSING_IR_IN_MUXA_GPIO)) << 4;
-    raw_r = get_adc_data(GET_ADC_CHANNEL(SENSING_IR_IN_MUXB_GPIO)) << 4;
+    raw_l = get_adc_data(GET_ADC_CHANNEL(SENSING_IR_IN_MUXA_GPIO)) >> 4;
+    raw_r = get_adc_data(GET_ADC_CHANNEL(SENSING_IR_IN_MUXB_GPIO)) >> 4;
     gpio_put(SENSING_IR_OUT_MUX_GPIO, 0); // IR 발광센서 끄기
 
     // 센서 값 저장

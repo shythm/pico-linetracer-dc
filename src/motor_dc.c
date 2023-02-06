@@ -230,12 +230,12 @@ inline static void motor_dc_control(enum motor_dc_index index) {
     // low pass filter: f(x) = x * c / (x + c) -> x == c일 때 아웃풋이 (x / 2)인 분수함수형의 low pass filter이다.
     // 논의점 1: low pass filter가 필요한가?
     // 논의점 2: d_term이 필요한가?
-    float error_d = error - error_pre;
-    float term_d = MOTOR_DC_GAIN_D * MOTOR_DC_LPF_CONST * error_d / (MOTOR_DC_LPF_CONST + error_d);
+    // float error_d = error - error_pre;
+    // float term_d = MOTOR_DC_GAIN_D * MOTOR_DC_LPF_CONST * error_d / (MOTOR_DC_LPF_CONST + error_d);
 
     // 비례항 적분항 미분항의 합을 전압으로 설정한다. 이를 모터에 인가한다.
     // 이때 dt_us를 곱하는데, 이는 dt에 대해 p, i, d term이 독립하도록 하기 위해서이다.
-    float input_voltage = dt_us * (term_p + term_i + term_d);
+    float input_voltage = dt_us * (term_p + term_i /*+ term_d*/);
     motor_dc_input_voltage(index, input_voltage, motor_dc[index].direction * voltage);
 
     // 모터 PID 제어 상태를 저장한다.
