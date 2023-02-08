@@ -274,3 +274,6 @@ void motor_dc_control_enabled(bool enabled) {
         timer_periodic_stop(MOTOR_DC_TIMER_SLOT);
     }
 }
+
+void motor_dc_velocity_control(bool enabled, int velocity) {
+}
