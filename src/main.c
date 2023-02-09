@@ -6,10 +6,11 @@
 #include "timer.h"
 #include "motor_dc.h"
 #include "oled.h"
+#include "drive.h"
 
 #include "hardware/clocks.h"
 
-#define MENU_NUM 7
+#define MENU_NUM 8
 
 void motor_test(void);
 void sensor_test(void);
@@ -18,6 +19,7 @@ void cal_test(void);
 void state_test(void);
 void set_threshold(void);
 void position_test(void);
+void first_drive(void);
 
 void (*menu_fp[MENU_NUM])(void) = {
     motor_test,
@@ -26,7 +28,8 @@ void (*menu_fp[MENU_NUM])(void) = {
     cal_test,
     set_threshold,
     state_test,
-    position_test
+    position_test,
+    drive_first,
 };
 
 char menu_name[MENU_NUM][16] = {
@@ -36,7 +39,8 @@ char menu_name[MENU_NUM][16] = {
     "Calib Test",
     "Set Thresh",
     "State Test",
-    "Pos Test"
+    "Pos Test",
+    "First Drive",
 };
 
 void menu_select(void) {
@@ -75,7 +79,7 @@ int main(void) {
     motor_dc_init();
     oled_init();
     oled_clear_all();
-    timer_periodic_start(2, 500, sensing_handler);
+    timer_periodic_start(0, 500, sensing_handler);
 
     menu_select();
     return 0;
@@ -215,6 +219,6 @@ void position_test(void) {
             break;
 
         oled_printf("/0  Pos Test  ");
-        oled_printf("/1   %5d", sensor_position);
+        oled_printf("/1   %5d   ", sensor_position);
     }
 }

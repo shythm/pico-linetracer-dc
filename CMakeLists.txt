@@ -16,6 +16,7 @@ add_executable(pico_linetracer_dc
     ./src/switch.c
     ./src/oled.c
     ./src/fonts.c
+    ./src/drive.c
 )
 
 # Add pico_stdlib library which aggregates commonly used features
