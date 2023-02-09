@@ -230,12 +230,12 @@ inline static void motor_dc_control(enum motor_dc_index index) {
     // low pass filter: f(x) = x * c / (x + c) -> x == c일 때 아웃풋이 (x / 2)인 분수함수형의 low pass filter이다.
     // 논의점 1: low pass filter가 필요한가?
     // 논의점 2: d_term이 필요한가?
-    float error_d = error - error_pre;
-    float term_d = MOTOR_DC_GAIN_D * MOTOR_DC_LPF_CONST * error_d / (MOTOR_DC_LPF_CONST + error_d);
+    // float error_d = error - error_pre;
+    // float term_d = MOTOR_DC_GAIN_D * MOTOR_DC_LPF_CONST * error_d / (MOTOR_DC_LPF_CONST + error_d);
 
     // 비례항 적분항 미분항의 합을 전압으로 설정한다. 이를 모터에 인가한다.
     // 이때 dt_us를 곱하는데, 이는 dt에 대해 p, i, d term이 독립하도록 하기 위해서이다.
-    float input_voltage = dt_us * (term_p + term_i + term_d);
+    float input_voltage = dt_us * (term_p + term_i /*+ term_d*/);
     motor_dc_input_voltage(index, input_voltage, motor_dc[index].direction * voltage);
 
     // 모터 PID 제어 상태를 저장한다.
@@ -272,5 +272,44 @@ void motor_dc_control_enabled(bool enabled) {
         timer_periodic_start(MOTOR_DC_TIMER_SLOT, dt_us, motor_dc_control_handler);
     } else {
         timer_periodic_stop(MOTOR_DC_TIMER_SLOT);
+    }
+}
+
+volatile float accel = 6.f; // 가속도(m/s^2)
+volatile float k = 0.0001;
+
+void motor_set_real_velocity_from_accel(enum motor_dc_index index, float dt_us) {
+    float v_cur = motor_dc_get_current_velocity(index);
+    float v_dst;
+    if (v_cur < v_dst) {
+        v_cur += 0.001 * 0.001 * accel * dt_us;
+        if (v_cur > v_dst)
+            v_cur = v_dst;
+    } else if (v_cur > v_dst) {
+        v_cur -= 0.001 * 0.001 * accel * dt_us;
+        if (v_cur < v_dst)
+            v_cur = v_dst;
+    }
+    motor_dc_set_velocity(index, v_dst);
+}
+
+/**
+ * @brief 지정된 가속도와 라인의 포지션에 따라 양쪽 모터의 속도를 조절한다.
+ * @brief  인터럽트를 사용해 주기적으로 작동해야한다.
+ * @param enabled 이 함수를 활성화할지 결정하는 인풋. true : 활성화 / false : 비활성화
+ * @param velocity 도달할 목표 속도를 설정한다.
+ */
+void motor_dc_velocity_control(bool enabled, int velocity) {
+    if (enabled) {
+        float target_speed[2]; // 양쪽 모터의 목표 속도
+
+        // 포지션에 따른 양쪽 모터의 각 목표 속도를 설정한다.
+        // 이건 인터럽트 밖으로 내보내도 될듯..
+        target_speed[MOTOR_DC_LEFT] = velocity * (1 + sensor_position);
+        target_speed[MOTOR_DC_RIGHT] = velocity * (1 - sensor_position);
+
+        // 각 모터에 대해 가속도에 따른 실제 속도를 설정한다.
+        motor_set_real_velocity_from_accel(MOTOR_DC_LEFT, dt_us);
+        motor_set_real_velocity_from_accel(MOTOR_DC_RIGHT, dt_us);
     }
 }
