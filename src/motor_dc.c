@@ -225,7 +225,7 @@ inline static void motor_dc_control(enum motor_dc_index index) {
     // 비례항 적분항 미분항의 합을 전압으로 설정한다. 이를 모터에 인가한다.
     // 이때 dt_us를 곱하는데, 이는 dt에 대해 p, i term이 독립하도록 하기 위해서이다.
     float input_voltage = dt_us * (term_p + term_i);
-    motor_dc_input_voltage(index, input_voltage, motor_dc[index].direction * voltage);
+    motor_dc_input_voltage(index, input_voltage, motor_dc[index].direction * sensing_get_voltage());
 
     // 모터 PID 제어 상태를 저장한다.
     pid_state[index].error = error;

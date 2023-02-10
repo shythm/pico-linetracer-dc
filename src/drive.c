@@ -38,8 +38,8 @@ void drive_control_velocity(enum motor_dc_index index, float velocity) {
  * @brief  인터럽트를 사용해 주기적으로 작동해야한다.
  */
 void drive_control_velocity_handler(void) {
-    drive_control_velocity(MOTOR_DC_LEFT, velocity_target * (1.f + k * sensor_position));
-    drive_control_velocity(MOTOR_DC_RIGHT, velocity_target * (1.f - k * sensor_position));
+    drive_control_velocity(MOTOR_DC_LEFT, velocity_target * (1.f + k * sensing_get_position()));
+    drive_control_velocity(MOTOR_DC_RIGHT, velocity_target * (1.f - k * sensing_get_position()));
 }
 
 void drive_control_velocity_enabled(bool enabled) {
@@ -63,7 +63,7 @@ void drive_first(void) {
 
     velocity_target = 2.0f;
     for (;;) {
-        oled_printf("/1   %5d   ", sensor_position);
+        oled_printf("/1   %5d   ", sensing_get_position());
         oled_printf("/2 velo : %1.2f  ", velocity_target);
 
         uint sw = switch_read_wait_ms(100);
