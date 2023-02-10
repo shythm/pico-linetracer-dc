@@ -52,11 +52,9 @@
  * DC 모터 PID 제어 관련 상수들
  */
 
-#define MOTOR_DC_GAIN_P            0.005f
-#define MOTOR_DC_GAIN_I            0.005f
-#define MOTOR_DC_GAIN_D            0.003f
+#define MOTOR_DC_GAIN_P            0.01f
+#define MOTOR_DC_GAIN_I            0.01f
 #define MOTOR_DC_ERROR_SUM_LIMIT   10.0f
-#define MOTOR_DC_LPF_CONST         0.1f
 #define MOTOR_DC_TIMER_SLOT        TIMER_SLOT_1
 #define MOTOR_DC_TIMER_INTERVAL_US 500
 

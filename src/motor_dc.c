@@ -134,7 +134,7 @@ void motor_dc_input_voltage(enum motor_dc_index index, float input_voltage, floa
     // PWM 카운터 최댓값 구하기
     const uint pwm_top = pwm_hw->slice[motor_dc[index].slice_num].top;
 
-    int level = MOTOR_DC_PWM_DEAD_ZONE + abs(pwm_top * duty_cycle); // PWM level 계산
+    int level = abs(pwm_top * duty_cycle); // PWM level 계산
     if (level > pwm_top) { // max limit(max)
         level = pwm_top;
     } else if (level < MOTOR_DC_PWM_DEAD_ZONE) { // min limit
@@ -145,7 +145,7 @@ void motor_dc_input_voltage(enum motor_dc_index index, float input_voltage, floa
     pwm_set_chan_level(motor_dc[index].slice_num, motor_dc[index].channel, (uint16_t)level);
 }
 
-const float dt_us = MOTOR_DC_TIMER_INTERVAL_US; // 모터 제어시 인터럽트가 발생되는 주기(us)
+static const float dt_us = MOTOR_DC_TIMER_INTERVAL_US; // 모터 제어시 인터럽트가 발생되는 주기(us)
 
 struct motor_dc_pid_state_t {
     float error; // PID 제어 인터럽트 발생 당시 에러
@@ -177,7 +177,7 @@ uint motor_dc_get_encoder_count(enum motor_dc_index index) {
  */
 static inline void motor_dc_update_velocity(enum motor_dc_index index) {
     // 속도 구하는 함수를 작동시키는 인터럽트가 작동하는 주기(단위는 s)
-    static const float interrupt_period_sec = dt_us / (1000 * 1000);
+    static const float dt_s = dt_us / (1000 * 1000);
     // 엔코더 1틱당 몇 미터인지 나타내는 상수
     static const float tick_per_meter = PI * MOTOR_WHEEL_DIAMETER_M * MOTOR_GEAR_RATIO / MOTOR_ENCODER_RESOLUTION;
     // 속도를 구하기 위해 이전 틱 수를 저장하는 변수
@@ -190,7 +190,7 @@ static inline void motor_dc_update_velocity(enum motor_dc_index index) {
     // 그리고 모터의 회전 방향에 맞는 상수(1 또는 -1)를 곱해준다.
     // 이때 모터의 회전 방향과 엔코더가 측정한 이동 방향과 반대일 수 있기 때문에 이에 따른 처리도 해준다.
     int sign = MOTOR_ENCODER_REVERSE ? -motor_dc[index].direction : motor_dc[index].direction;
-    float velo = sign * (tick_curr - tick_prev[index]) * tick_per_meter / interrupt_period_sec;
+    float velo = sign * (tick_curr - tick_prev[index]) * tick_per_meter / dt_s;
 
     pid_state[index].velo_curr = velo; // 현재 상태에 속도 정보 업데이트
 
@@ -205,9 +205,6 @@ static inline void motor_dc_update_velocity(enum motor_dc_index index) {
  * @param index MOTOR_DC_LEFT(왼쪽 모터) 또는 MOTOR_DC_RIGHT(오른쪽 모터)
  */
 inline static void motor_dc_control(enum motor_dc_index index) {
-    // 모터에 대한 pre_error(이전 error값)을 저장한다. - 미분항을 구하기 위해
-    float error_pre = pid_state[index].error;
-
     // 모터에 대한 error(현재 속도와 목표 속도와의 차)를 구한다. - 비례항을 구하기 위해
     float error = pid_state[index].velo_targ - pid_state[index].velo_curr;
 
@@ -225,17 +222,9 @@ inline static void motor_dc_control(enum motor_dc_index index) {
     // error의 누적을 통해 적분항(integral term)을 구한다.
     float term_i = MOTOR_DC_GAIN_I * error_sum;
 
-    // error의 미분(error - pre_error)을 통해 미분항(derivative term)을 구한다.
-    // 이때 미분항의 노이즈를 줄이기위해 low pass filter을 거친다.
-    // low pass filter: f(x) = x * c / (x + c) -> x == c일 때 아웃풋이 (x / 2)인 분수함수형의 low pass filter이다.
-    // 논의점 1: low pass filter가 필요한가?
-    // 논의점 2: d_term이 필요한가?
-    // float error_d = error - error_pre;
-    // float term_d = MOTOR_DC_GAIN_D * MOTOR_DC_LPF_CONST * error_d / (MOTOR_DC_LPF_CONST + error_d);
-
     // 비례항 적분항 미분항의 합을 전압으로 설정한다. 이를 모터에 인가한다.
-    // 이때 dt_us를 곱하는데, 이는 dt에 대해 p, i, d term이 독립하도록 하기 위해서이다.
-    float input_voltage = dt_us * (term_p + term_i /*+ term_d*/);
+    // 이때 dt_us를 곱하는데, 이는 dt에 대해 p, i term이 독립하도록 하기 위해서이다.
+    float input_voltage = dt_us * (term_p + term_i);
     motor_dc_input_voltage(index, input_voltage, motor_dc[index].direction * voltage);
 
     // 모터 PID 제어 상태를 저장한다.
