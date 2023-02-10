@@ -27,6 +27,7 @@ void (*menu_fp[MENU_NUM])(void) = {
     set_threshold,
     state_test,
     position_test,
+    mark_test,
     drive_first,
 };
 
@@ -37,6 +38,7 @@ char menu_name[MENU_NUM][16] = {
     "Set Thresh",
     "State Test",
     "Pos Test",
+    "Mark Test",
     "First Drive",
 };
 
