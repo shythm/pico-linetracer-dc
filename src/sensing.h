@@ -24,7 +24,12 @@ extern volatile int sensor_raw[16];
 extern volatile int sensor_coef_bias[16]; // 블랙 맥스(=편향값)
 extern volatile int sensor_coef_range[16]; // 센서값 범위(화이트 맥스 - 블랙 맥스)
 extern volatile int sensor_normalized[16];
-extern volatile uint16_t sensor_state; // 센서가 흰색을 보면 1 아니면 0임을 저장한다.
+
+/**
+ * @brief 센서 state를 저장할 타입. 16조 센서의 경우에 총 16개의 비트가 필요하므로 16비트 자료형(uint16_t)을 사용한다.
+ */
+typedef uint16_t sensor_state_t;
+extern volatile sensor_state_t sensor_state; // 센서가 흰색을 보면 1 아니면 0임을 저장한다.
 extern volatile float sensor_threshold; // 노멀라이즈된 센서값을 스테이트로 바꾸기 위한 임계값.(0~ff)
 extern volatile int sensor_position; // 라인이 감지되는 포지션
 extern volatile int zero_point; // 3차를 위한 영점. 0보다 크면 센서 중앙을 기준으로 오른쪽으로 position의 영점이 변환된다.

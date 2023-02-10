@@ -205,9 +205,9 @@ void state_test(void) {
         if (sw == SWITCH_EVENT_BOTH)
             break;
 
-        oled_printf("/0%1x%1x%1x%1x%1x%1x%1x%1x%1x%1x%1x%1x", ((uint16_t)sensor_state >> 2) & 1, ((uint16_t)sensor_state >> 3) & 1, ((uint16_t)sensor_state >> 4) & 1, ((uint16_t)sensor_state >> 5) & 1, ((uint16_t)sensor_state >> 6) & 1, ((uint16_t)sensor_state >> 7) & 1, ((uint16_t)sensor_state >> 8) & 1, ((uint16_t)sensor_state >> 9) & 1, ((uint16_t)sensor_state >> 10) & 1, ((uint16_t)sensor_state >> 11) & 1, ((uint16_t)sensor_state >> 12) & 1, ((uint16_t)sensor_state >> 13) & 1);
-        oled_printf("/1%1x          %1x", ((uint16_t)sensor_state >> 1) & 1, ((uint16_t)sensor_state >> 14) & 1);
-        oled_printf("/2%1x          %1x", ((uint16_t)sensor_state >> 0) & 1, ((uint16_t)sensor_state >> 15) & 1);
+        oled_printf("/0%1x%1x%1x%1x%1x%1x%1x%1x%1x%1x%1x%1x", ((uint16_t)sensor_state >> 13) & 1, ((uint16_t)sensor_state >> 12) & 1, ((uint16_t)sensor_state >> 11) & 1, ((uint16_t)sensor_state >> 10) & 1, ((uint16_t)sensor_state >> 9) & 1, ((uint16_t)sensor_state >> 8) & 1, ((uint16_t)sensor_state >> 7) & 1, ((uint16_t)sensor_state >> 6) & 1, ((uint16_t)sensor_state >> 5) & 1, ((uint16_t)sensor_state >> 4) & 1, ((uint16_t)sensor_state >> 3) & 1, ((uint16_t)sensor_state >> 2) & 1);
+        oled_printf("/1%1x          %1x", ((uint16_t)sensor_state >> 14) & 1, ((uint16_t)sensor_state >> 1) & 1);
+        oled_printf("/2%1x          %1x", ((uint16_t)sensor_state >> 15) & 1, ((uint16_t)sensor_state >> 0) & 1);
     }
 }
 

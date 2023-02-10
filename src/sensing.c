@@ -134,8 +134,8 @@ volatile int sensor_coef_range[16] = {
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, //
 }; // IR 센서가 가질 수 있는 범위
 volatile int sensor_normalized[16]; // 정규화된 IR 센서의 값, 이 값들을 주로 이용
-volatile uint16_t sensor_state; // 센서가 흰색을 보면 1, 아니면 0을 저장한다.
-volatile float sensor_threshold = 0.5; // 노멀라이즈된 센서값을 스테이트로 바꾸기 위한 임계값.(0~1)
+volatile sensor_state_t sensor_state; // 센서가 흰색을 보면 1, 아니면 0을 저장한다.
+volatile float sensor_threshold = 0.3; // 노멀라이즈된 센서값을 스테이트로 바꾸기 위한 임계값.(0~1)
 volatile int sensor_position = 0; // 라인이 감지되는 포지션
 volatile int zero_point = 0; // 3차를 위한 영점. 0보다 크면 센서 중앙을 기준으로 오른쪽으로 position의 영점이 변환된다.
 
@@ -168,9 +168,9 @@ void sensing_infrared(void) {
     sensor_normalized[i + 8] = MAX(sensor_normalized[i + 8], 0x00);
 
     // threshold에 따른 센서 state 저장
-    sensor_state &= ~((1 << i) | (1 << (i + 8)));
-    sensor_state |= (sensor_normalized[i] > (sensor_threshold * 0xff)) << i;
-    sensor_state |= (sensor_normalized[i + 8] > (sensor_threshold * 0xff)) << (i + 8);
+    sensor_state &= ~((1 << (0x7 - i)) | (1 << (0xf - i)));
+    sensor_state |= (sensor_normalized[i] > (sensor_threshold * 0xff)) << (0xf - i);
+    sensor_state |= (sensor_normalized[i + 8] > (sensor_threshold * 0xff)) << (0x7 - i);
 
     // position 구하기
     sensor_position = 0;
