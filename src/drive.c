@@ -3,7 +3,7 @@
 
 #include "pico.h"
 #include "pico/types.h"
-#include "motor_dc.h"
+#include "motor.h"
 #include "timer.h"
 #include "oled.h"
 #include "switch.h"
@@ -163,8 +163,8 @@ void mark_test(void) {
 #define DRIVE_TIMER_INTERVAL_US 500
 
 static volatile struct drive_control {
-    float velocity_command[MOTOR_DC_COUNT];
-    float velocity_target[MOTOR_DC_COUNT];
+    float velocity_command[MOTOR_COUNT];
+    float velocity_target[MOTOR_COUNT];
     float acceleration;
     float deceleration;
 } _control = {
@@ -179,7 +179,7 @@ static volatile struct drive_control {
  *
  * @param index 왼쪽 모터(MOTOR_DC_LEFT) 또는 오른쪽 모터(MOTOR_DC_RIGHT)
  */
-static inline void drive_control_acceleration_dt(enum motor_dc_index index) {
+static inline void drive_control_acceleration_dt(enum motor_index index) {
     static const float dt_s = (DRIVE_TIMER_INTERVAL_US * 0.001) * 0.001;
 
     float command = _control.velocity_command[index]; // 지령 속도 가져옴
@@ -197,7 +197,7 @@ static inline void drive_control_acceleration_dt(enum motor_dc_index index) {
         }
     }
 
-    motor_dc_set_velocity(index, command); // 모터 속도 설정
+    motor_set_velocity(index, command); // 모터 속도 설정
     _control.velocity_command[index] = command; // 지령 속도 저장
 }
 
@@ -205,8 +205,8 @@ static inline void drive_control_acceleration_dt(enum motor_dc_index index) {
  * @brief 모터의 가감속 제어를 수행하는 타이머 IRQ Handler
  */
 static void drive_control_acceleration_handler(void) {
-    drive_control_acceleration_dt(MOTOR_DC_LEFT);
-    drive_control_acceleration_dt(MOTOR_DC_RIGHT);
+    drive_control_acceleration_dt(MOTOR_LEFT);
+    drive_control_acceleration_dt(MOTOR_RIGHT);
 }
 
 /**
@@ -216,26 +216,26 @@ static void drive_control_acceleration_handler(void) {
  */
 static void drive_control_enabled(bool enabled) {
     if (enabled) {
-        motor_dc_control_enabled(true);
+        motor_start();
         timer_periodic_start(DRIVE_TIMER_SLOT, DRIVE_TIMER_INTERVAL_US, drive_control_acceleration_handler);
     } else {
-        _control.velocity_target[MOTOR_DC_LEFT] = 0.0f;
-        _control.velocity_target[MOTOR_DC_RIGHT] = 0.0f;
+        _control.velocity_target[MOTOR_LEFT] = 0.0f;
+        _control.velocity_target[MOTOR_RIGHT] = 0.0f;
 
         for (;;) {
             float command_avg =
-                (_control.velocity_command[MOTOR_DC_LEFT] + _control.velocity_command[MOTOR_DC_RIGHT]) / 2;
+                (_control.velocity_command[MOTOR_LEFT] + _control.velocity_command[MOTOR_RIGHT]) / 2;
 
             if (command_avg < 0.1f) {
                 break;
             }
         }
 
-        _control.velocity_command[MOTOR_DC_LEFT] = 0.0f;
-        _control.velocity_command[MOTOR_DC_RIGHT] = 0.0f;
+        _control.velocity_command[MOTOR_LEFT] = 0.0f;
+        _control.velocity_command[MOTOR_RIGHT] = 0.0f;
 
         timer_periodic_stop(DRIVE_TIMER_SLOT);
-        motor_dc_control_enabled(false);
+        motor_stop();
     }
 }
 
@@ -243,8 +243,12 @@ static inline bool drive_is_on_line(void) {
     return __builtin_popcount(sensing_get_ir_state() & mark_mask.all);
 }
 
-static inline void drive_set_velocity(enum motor_dc_index index, float velocity) {
+static inline void drive_set_velocity(enum motor_index index, float velocity) {
     _control.velocity_target[index] = velocity;
+}
+
+static inline float drive_get_velocity(void) {
+    return (_control.velocity_command[MOTOR_LEFT] + _control.velocity_command[MOTOR_RIGHT]) / 2;
 }
 
 void drive_first(void) {
@@ -311,12 +315,22 @@ void drive_first(void) {
 
         // 좌우 모터 속도 조절
         float kp = curve_coef * sensing_get_position();
-        drive_set_velocity(MOTOR_DC_LEFT, velocity_center * (1.f + kp));
-        drive_set_velocity(MOTOR_DC_RIGHT, velocity_center * (1.f - kp));
+        drive_set_velocity(MOTOR_LEFT, velocity_center * (1.f - kp));
+        drive_set_velocity(MOTOR_RIGHT, velocity_center * (1.f + kp));
 
         if (mark_end_count == 2) {
+            // fit-in 2as = 나중속도^2 - 처음속도^2
+
+            _control.deceleration = drive_get_velocity() * drive_get_velocity() / (2 * 0.3);
+            drive_set_velocity(MOTOR_LEFT, 0.0f);
+            drive_set_velocity(MOTOR_RIGHT, 0.0f);
+            while (drive_get_velocity() > 0.1f) {
+                tight_loop_contents();
+            }
             break;
         }
     }
+
+    sleep_ms(100);
     drive_control_enabled(false);
 }

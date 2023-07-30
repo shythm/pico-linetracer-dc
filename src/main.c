@@ -4,24 +4,51 @@
 #include "switch.h"
 #include "sensing.h"
 #include "timer.h"
-#include "motor_dc.h"
+#include "motor.h"
 #include "oled.h"
 #include "drive.h"
 
 #include "hardware/clocks.h"
 
-#define MENU_NUM 8
+#define MENU_NUM 9
 
-void motor_test(void);
 void calibrate(void);
 void cal_test(void);
 void state_test(void);
 void set_threshold(void);
 void position_test(void);
-void first_drive(void);
+
+void motor_test_position_control(void) {
+    motor_start();
+    float tv = 0.0f;
+
+    for (;;) {
+        uint sw = switch_read_wait_ms(100);
+        struct motor_control_state_t csl = motor_get_control_state(MOTOR_LEFT);
+        struct motor_control_state_t csr = motor_get_control_state(MOTOR_RIGHT);
+
+        if (sw == SWITCH_EVENT_LEFT)
+            tv -= 0.1f;
+        else if (sw == SWITCH_EVENT_RIGHT)
+            tv += 0.1f;
+        else if (sw == SWITCH_EVENT_BOTH)
+            break;
+
+        motor_set_velocity(MOTOR_LEFT, tv);
+        motor_set_velocity(MOTOR_RIGHT, tv);
+
+        oled_printf("/0MotorPosTest");
+        oled_printf("/1tv: %1.2f", tv);
+        oled_printf("/2l_error/3%+10d", csl.error);
+        oled_printf("/4r_error/5%+10d", csr.error);
+    }
+
+    motor_stop();
+}
 
 void (*menu_fp[MENU_NUM])(void) = {
-    motor_test,
+    motor_test_position_control,
+    motor_pwm_test,
     calibrate,
     cal_test,
     set_threshold,
@@ -32,7 +59,8 @@ void (*menu_fp[MENU_NUM])(void) = {
 };
 
 char menu_name[MENU_NUM][16] = {
-    "Motor Test",
+    "MotorPosTest",
+    "PWM Test",
     "Calibration",
     "Calib Test",
     "Set Thresh",
@@ -70,36 +98,13 @@ int main(void) {
 
     switch_init();
     sensing_init();
-    motor_dc_init();
+    motor_init();
     oled_init();
     oled_clear_all();
 
     sensing_set_enabled(true); // voltage sensing, ir sensing 수행
     menu_select();
     return 0;
-}
-
-void motor_test(void) {
-    float tv = 0.f;
-    motor_dc_control_enabled(true);
-
-    for (;;) {
-        uint sw = switch_read_wait_ms(100);
-
-        if (sw == SWITCH_EVENT_LEFT) {
-            tv -= 0.1f;
-        } else if (sw == SWITCH_EVENT_RIGHT) {
-            tv += 0.1f;
-        } else if (sw == SWITCH_EVENT_BOTH) {
-            motor_dc_control_enabled(false);
-            break;
-        }
-        motor_dc_set_velocity(MOTOR_DC_LEFT, tv);
-        motor_dc_set_velocity(MOTOR_DC_RIGHT, tv);
-        oled_printf("/0tv: %2.2f", tv);
-        oled_printf("/1spdl:%2.4f", motor_dc_get_current_velocity(MOTOR_DC_LEFT));
-        oled_printf("/2spdr:%2.4f", motor_dc_get_current_velocity(MOTOR_DC_RIGHT));
-    }
 }
 
 void calibrate(void) {

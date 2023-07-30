@@ -12,7 +12,7 @@ add_executable(pico_linetracer_dc
     ./src/main.c
     ./src/sensing.c
     ./src/timer.c
-    ./src/motor_dc.c
+    ./src/motor.c
     ./src/switch.c
     ./src/oled.c
     ./src/fonts.c

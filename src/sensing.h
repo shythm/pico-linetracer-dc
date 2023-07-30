@@ -14,7 +14,7 @@ extern volatile float _sensing_voltage;
  * @brief 현재 메인보드에 인가되는 전압을 가져옵니다.
  * @return 전압(V)
  */
-static inline float sensing_get_voltage(void) {
+static inline float sensing_get_supply_voltage(void) {
     return _sensing_voltage;
 }
 
