@@ -1,11 +1,14 @@
 /**
  * @file motor.c
  * @author Seongho Lee (shythm@outlook.com)
- *
- * @brief DC 모터 제어를 위해
- * 1. 모터 관련 주변 장치 초기화, 2. 모터 위치 제어 코드를 서술한다.
  */
+
 #include <stdlib.h>
+#include "hardware/gpio.h"
+#include "hardware/pwm.h"
+#include "hardware/pio.h"
+#include "hardware/clocks.h"
+
 #include "config.h"
 #include "motor.h"
 #include "sensing.h"
@@ -17,7 +20,7 @@
  * 이는 CPU 자원을 이용하지 않고 PIO 장치에서 독립적으로 작동하기에 빠르고 효율적이다.
  * 우리는 하나의 PIO에 quadrature encoder 프로그램을 올리고 이를 이용하고자 한다.
  */
-static PIO encoder_pio = MOTOR_ENCODER_PIO;
+static const PIO encoder_pio = MOTOR_ENCODER_PIO;
 
 static struct encoder_t {
     /**
@@ -72,13 +75,74 @@ int32_t motor_get_encoder_value(enum motor_index index) {
     return encoder[index].comp * value;
 }
 
-#define CONTROL_TIMER_SLOT  (TIMER_SLOT_1)
-#define CONTROL_INTERVAL_US (500)
-#define CONTROL_GAIN_P      (0.04f)
-#define CONTROL_GAIN_D      (0.02f)
+static const uint pwm_slice_num = MOTOR_PWM_SLICE_NUM;
+static const uint dir_gpio[MOTOR_COUNT] = { MOTOR_DIR_GPIO_LEFT, MOTOR_DIR_GPIO_RIGHT };
+
+static inline void motor_driver_init() {
+    // PWM 및 시스템 클럭 정의, 이때 가청 주파수보다 높아야 귀에 거슬리는 소리가 나지 않는다.
+    const uint32_t freq_pwm = 20000;
+    const uint32_t freq_sys = clock_get_hz(clk_sys);
+
+    /**
+     * @brief PWM 주파수를 결정하기 위한 변수.
+     * PWM의 카운터 레지스터가 계속 증가하면서 TOP에 도달하면 다시 초기화되는 형태로 동작한다.
+     *
+     * RP2040 datasheet 4.5.2.6절에 따르면 PWM 주파수는 다음과 같이 구한다.
+     * freq_pwm = freq_sys / ( (TOP + 1) * (CSR_PH_CORRECT + 1) * ( DIV_INT + (DIV_FRAC / 16) ) )
+     *
+     * 1. CSR_PH_CORRECT는 카운터 레지스터가 TOP에 도달했을 때 0으로 떨어지는 것이 아니라 그대로 감소하는 설정을 말하며,
+     *    우리는 이 기능을 사용하지 않기 때문에 0으로 둔다.
+     * 2. TOP 레지스터 크기는 16비트로 기본적으로 65535 값을 가진다.
+     * 3. DIV_INT 및 DIV_FRAC는 클럭을 나눌 때 사용하며, 1과 0으로 두어 사용하지 않는다.
+     *
+     * 위의 조건에 따라 TOP 레지스터를 좌항으로 두어 식을 정리하면,
+     * TOP = freq_sys / freq_pwm - 1
+     *
+     * 예를 들어, freq_sys가 125,000,000Hz이고 freq_pwm이 20,000Hz이면 TOP은 6,250이 될 것이다.
+     */
+    const uint16_t top = freq_sys / freq_pwm - 1;
+
+    // PWM 장치 기본 설정을 가져오고, PWM 주파수 설정
+    pwm_config pwm_conf = pwm_get_default_config();
+    pwm_config_set_wrap(&pwm_conf, top);
+
+    // PWM 초기화
+    pwm_init(pwm_slice_num, &pwm_conf, false);
+
+    // (참고) RP2040에는 총 8개의 PWM slice가 존재하고, 각 slice마다 2개의 channel(GPIO)을 가지고 있다.
+    // 양쪽 모터에 대해 PWM GPIO 설정
+    gpio_set_function(MOTOR_PWM_GPIO_LEFT, GPIO_FUNC_PWM);
+    gpio_set_function(MOTOR_PWM_GPIO_RIGHT, GPIO_FUNC_PWM);
+
+    // DC 모터 드라이버의 direction 핀에 들어가는 GPIO를 초기화한다.
+    // 모터 드라이버에 내장돼있는 H-Bridge 회로를 이용해 모터의 회전 방향을 변경하는데 사용된다.
+    for (int i = 0; i < MOTOR_COUNT; i++) {
+        gpio_init(dir_gpio[i]);
+        gpio_set_dir(dir_gpio[i], GPIO_OUT);
+        gpio_put(dir_gpio[i], false);
+    }
+}
+
+void motor_pwm_enabled(enum motor_index index, const bool enabled) {
+    pwm_set_chan_level(pwm_slice_num, index, 0);
+    pwm_set_enabled(pwm_slice_num, enabled);
+}
+
+void motor_set_pwm_duty_ratio(enum motor_index index, float duty_ratio) {
+    const uint16_t level_max = pwm_hw->slice[pwm_slice_num].top;
+
+    int level = abs(duty_ratio * level_max);
+    if (level > level_max) { // 오버플로우 방지
+        level = level_max;
+    } else if (level < 0) { // 언더플로우 방지
+        level = 0;
+    }
+    pwm_set_chan_level(pwm_slice_num, index, (uint16_t)level); // PWM 인가
+
+    gpio_put(dir_gpio[index], duty_ratio > 0.f); // 방향 설정
+}
 
 static const int dircomp[MOTOR_COUNT] = { -1, 1 }; // 모터 방향 보정 상수 (1 또는 -1)
-static struct motor_pwm_t pwm[MOTOR_COUNT];
 static struct motor_control_state_t control[MOTOR_COUNT];
 
 /**
@@ -118,8 +182,7 @@ static inline void motor_control_dt(const enum motor_index index) {
 
     // PWM duty ratio 계산 및 적용
     const float duty_ratio = voltage / sensing_get_supply_voltage();
-    motor_pwm_set_direction(&pwm[index], duty_ratio > 0.f); // 모터 회전 방향 설정
-    motor_pwm_set_duty_ratio(&pwm[index], duty_ratio); // PWM 출력
+    motor_set_pwm_duty_ratio(index, duty_ratio); // PWM 출력
 
     // 다음 미분항 계산을 위해 오차를 저장해둔다.
     state->error = error;
@@ -142,8 +205,8 @@ inline static void motor_reset_control_state(enum motor_index index) {
 }
 
 void motor_start(void) {
-    motor_pwm_enabled(&pwm[MOTOR_LEFT], true);
-    motor_pwm_enabled(&pwm[MOTOR_RIGHT], true);
+    motor_pwm_enabled(MOTOR_LEFT, true);
+    motor_pwm_enabled(MOTOR_RIGHT, true);
     motor_reset_control_state(MOTOR_LEFT);
     motor_reset_control_state(MOTOR_RIGHT);
 
@@ -153,8 +216,8 @@ void motor_start(void) {
 void motor_stop(void) {
     timer_periodic_stop(CONTROL_TIMER_SLOT);
 
-    motor_pwm_enabled(&pwm[MOTOR_LEFT], false);
-    motor_pwm_enabled(&pwm[MOTOR_RIGHT], false);
+    motor_pwm_enabled(MOTOR_LEFT, false);
+    motor_pwm_enabled(MOTOR_RIGHT, false);
 }
 
 void motor_set_velocity(const enum motor_index index, float velocity) {
@@ -166,41 +229,6 @@ struct motor_control_state_t motor_get_control_state(const enum motor_index inde
 }
 
 void motor_init(void) {
-    pwm[MOTOR_LEFT] = motor_pwm_init(MOTOR_GPIO_PWM_LEFT, MOTOR_GPIO_DIRECTION_LEFT);
-    pwm[MOTOR_RIGHT] = motor_pwm_init(MOTOR_GPIO_PWM_RIGHT, MOTOR_GPIO_DIRECTION_RIGHT);
-
+    motor_driver_init();
     encoder_init();
-}
-
-#include "switch.h"
-#include "oled.h"
-void motor_pwm_test(void) {
-    float duty_ratio = 0;
-
-    motor_pwm_enabled(&pwm[MOTOR_LEFT], true);
-    motor_pwm_enabled(&pwm[MOTOR_RIGHT], true);
-
-    for (;;) {
-        uint sw = switch_read_wait_ms(100);
-        struct motor_control_state_t csl = motor_get_control_state(MOTOR_LEFT);
-        struct motor_control_state_t csr = motor_get_control_state(MOTOR_RIGHT);
-
-        if (sw == SWITCH_EVENT_LEFT)
-            duty_ratio -= 0.1f;
-        else if (sw == SWITCH_EVENT_RIGHT)
-            duty_ratio += 0.1f;
-        else if (sw == SWITCH_EVENT_BOTH)
-            break;
-
-        motor_pwm_set_direction(&pwm[MOTOR_LEFT], duty_ratio > 0.0f);
-        motor_pwm_set_duty_ratio(&pwm[MOTOR_LEFT], duty_ratio);
-        motor_pwm_set_direction(&pwm[MOTOR_RIGHT], duty_ratio > 0.0f);
-        motor_pwm_set_duty_ratio(&pwm[MOTOR_RIGHT], duty_ratio);
-
-        oled_printf("/0PWM Test");
-        oled_printf("/1duty ratio/2%1.2f", duty_ratio);
-    }
-
-    motor_pwm_enabled(&pwm[MOTOR_LEFT], false);
-    motor_pwm_enabled(&pwm[MOTOR_RIGHT], false);
 }

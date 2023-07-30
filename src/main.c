@@ -46,6 +46,33 @@ void motor_test_position_control(void) {
     motor_stop();
 }
 
+void motor_pwm_test(void) {
+    float duty_ratio = 0;
+
+    motor_pwm_enabled(MOTOR_LEFT, true);
+    motor_pwm_enabled(MOTOR_RIGHT, true);
+
+    for (;;) {
+        uint sw = switch_read_wait_ms(100);
+
+        if (sw == SWITCH_EVENT_LEFT)
+            duty_ratio -= 0.1f;
+        else if (sw == SWITCH_EVENT_RIGHT)
+            duty_ratio += 0.1f;
+        else if (sw == SWITCH_EVENT_BOTH)
+            break;
+
+        motor_set_pwm_duty_ratio(MOTOR_LEFT, duty_ratio);
+        motor_set_pwm_duty_ratio(MOTOR_RIGHT, duty_ratio);
+
+        oled_printf("/0PWM Test");
+        oled_printf("/1duty ratio/2%1.2f", duty_ratio);
+    }
+
+    motor_pwm_enabled(MOTOR_LEFT, false);
+    motor_pwm_enabled(MOTOR_RIGHT, false);
+}
+
 void (*menu_fp[MENU_NUM])(void) = {
     motor_test_position_control,
     motor_pwm_test,
