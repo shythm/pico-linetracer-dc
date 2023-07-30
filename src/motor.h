@@ -39,18 +39,53 @@ void motor_pwm_enabled(enum motor_index index, const bool enabled);
 void motor_set_pwm_duty_ratio(enum motor_index index, float duty_ratio);
 
 struct motor_control_state_t {
-    float velocity;
     float gain_p;
     float gain_d;
     int32_t error;
-    int32_t target;
     int32_t current;
+    int32_t target;
 };
 
-void motor_start(void);
-void motor_stop(void);
-void motor_set_velocity(const enum motor_index index, float velocity);
+/**
+ * @brief 모터의 현재 제어 상태를 반환한다. 에러값, 목표값, 현재값 등을 확인할 수 있다.
+ *
+ * @param index MOTOR_LEFT(왼쪽 모터) 또는 MOTOR_RIGHT(오른쪽 모터)
+ * @return struct motor_control_state_t 모터 제어 상태 구조체
+ */
+struct motor_control_state_t motor_get_control_state(enum motor_index index);
+
+/**
+ * @brief 모터 위치 PID 제어 시 목표량(Set Point, SP, Target)을 설정하는 함수 포인터 타입
+ *
+ * [예시]
+ *   void target_updater(int32_t *const left, int32_t *const right) {
+ *     *left = *left + 1;
+ *     *right = *right + 2;
+ *   }
+ */
+typedef void (*motor_target_updater_t)(int32_t *const left, int32_t *const right);
+
+/**
+ * @brief 모터 위치 PID 제어를 시작한다. 두 모터에 대해
+ * 1. PWM 장치를 활성화하고,
+ * 2. 모터 위치 PID 제어 관련 상태 변수들을 초기화하고,
+ * 3. 목표량(위치) 갱신 함수를 등록하고,
+ * 4. PID 제어 타이머를 시작한다.
+ *
+ * @param updater 모터 위치 PID 제어 시 목표량을 결정하는 함수
+ */
+void motor_control_start(const motor_target_updater_t updater);
+
+/**
+ * @brief 모터 위치 PID 제어를 종료한다. 두 모터에 대해
+ * 1. PID 제어 타이머를 중지시킨다.
+ * 2. PWM 장치를 비활성화한다.
+ */
+void motor_control_stop(void);
+
+/**
+ * @brief 모터 동작을 위해 모터 PWM 및 엔코더 장치를 초기화한다.
+ */
 void motor_init(void);
-struct motor_control_state_t motor_get_control_state(const enum motor_index index);
 
 #endif

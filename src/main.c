@@ -18,34 +18,6 @@ void state_test(void);
 void set_threshold(void);
 void position_test(void);
 
-void motor_test_position_control(void) {
-    motor_start();
-    float tv = 0.0f;
-
-    for (;;) {
-        uint sw = switch_read_wait_ms(100);
-        struct motor_control_state_t csl = motor_get_control_state(MOTOR_LEFT);
-        struct motor_control_state_t csr = motor_get_control_state(MOTOR_RIGHT);
-
-        if (sw == SWITCH_EVENT_LEFT)
-            tv -= 0.1f;
-        else if (sw == SWITCH_EVENT_RIGHT)
-            tv += 0.1f;
-        else if (sw == SWITCH_EVENT_BOTH)
-            break;
-
-        motor_set_velocity(MOTOR_LEFT, tv);
-        motor_set_velocity(MOTOR_RIGHT, tv);
-
-        oled_printf("/0MotorPosTest");
-        oled_printf("/1tv: %1.2f", tv);
-        oled_printf("/2l_error/3%+10d", csl.error);
-        oled_printf("/4r_error/5%+10d", csr.error);
-    }
-
-    motor_stop();
-}
-
 void motor_pwm_test(void) {
     float duty_ratio = 0;
 
@@ -74,7 +46,6 @@ void motor_pwm_test(void) {
 }
 
 void (*menu_fp[MENU_NUM])(void) = {
-    motor_test_position_control,
     motor_pwm_test,
     calibrate,
     cal_test,
@@ -86,7 +57,6 @@ void (*menu_fp[MENU_NUM])(void) = {
 };
 
 char menu_name[MENU_NUM][16] = {
-    "MotorPosTest",
     "PWM Test",
     "Calibration",
     "Calib Test",

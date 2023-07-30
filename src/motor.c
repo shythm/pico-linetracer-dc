@@ -60,7 +60,7 @@ static struct encoder_t {
 
 #include "quadrature_encoder.pio.h"
 
-static inline void encoder_init() {
+static inline void motor_encoder_init() {
     const uint instruction_offset = pio_add_program(encoder_pio, &quadrature_encoder_program);
 
     for (int i = 0; i < MOTOR_COUNT; i++) {
@@ -76,7 +76,9 @@ int32_t motor_get_encoder_value(enum motor_index index) {
 }
 
 static const uint pwm_slice_num = MOTOR_PWM_SLICE_NUM;
-static const uint dir_gpio[MOTOR_COUNT] = { MOTOR_DIR_GPIO_LEFT, MOTOR_DIR_GPIO_RIGHT };
+static const uint dir_gpio[MOTOR_COUNT] = {
+    MOTOR_DIR_GPIO_LEFT, MOTOR_DIR_GPIO_RIGHT
+};
 
 static inline void motor_driver_init() {
     // PWM 및 시스템 클럭 정의, 이때 가청 주파수보다 높아야 귀에 거슬리는 소리가 나지 않는다.
@@ -142,22 +144,18 @@ void motor_set_pwm_duty_ratio(enum motor_index index, float duty_ratio) {
     gpio_put(dir_gpio[index], duty_ratio > 0.f); // 방향 설정
 }
 
-static const int dircomp[MOTOR_COUNT] = { -1, 1 }; // 모터 방향 보정 상수 (1 또는 -1)
-static struct motor_control_state_t control[MOTOR_COUNT];
+static struct motor_control_state_t control_state[MOTOR_COUNT];
+
+struct motor_control_state_t motor_get_control_state(enum motor_index index) {
+    return control_state[index];
+}
 
 /**
  * @brief 위치에 대한 목표값과 현재값의 차이(오차)를 계산하여 모터가 목표값까지 도달하기 위해 필요한 전압을 계산한다.
  */
 static inline void motor_control_dt(const enum motor_index index) {
-    static const float dt_s = (float)CONTROL_INTERVAL_US / (1000 * 1000);
-    struct motor_control_state_t *const state = &control[index];
-
-    /**
-     * 매 주기마다 속도에 따른 목표 위치 값을 더해준다.
-     * 이때 모터의 방향을 고려한다(한쪽 모터는 반대로 돌아야 하는데, 그러기 위해서는 그냥 위치를 반대 부호(음수)로 주면 된다).
-     */
-    static const float tick_per_meter = ENCODER_RESOLUTION / (WHEEL_DIAMETER_M * PI) / GEAR_RATIO; // 약 69,630
-    state->target += dircomp[index] * tick_per_meter * (state->velocity * dt_s); // 2 m/s - 35 tick/interval
+    static const float dt_s = (float)MOTOR_CONTROL_INTERVAL_US / (1000 * 1000);
+    struct motor_control_state_t *const state = &control_state[index];
 
     // 엔코더를 이용해 현재 모터의 위치를 구한다.
     state->current = motor_get_encoder_value(index);
@@ -188,47 +186,47 @@ static inline void motor_control_dt(const enum motor_index index) {
     state->error = error;
 }
 
+// 모터 위치 PID 제어 시 목표량(Set Point, SP)을 결정하는 함수
+static motor_target_updater_t target_updater = NULL;
+
 static void motor_control_handler(void) {
+    // 매 주기마다 목표값을 업데이트하기 위해 외부 함수를 호출한다.
+    if (target_updater) {
+        target_updater(
+            &control_state[MOTOR_LEFT].target, &control_state[MOTOR_RIGHT].target);
+    }
+
+    // 매 주기마다 PID 제어를 실시한다.
     motor_control_dt(MOTOR_LEFT);
     motor_control_dt(MOTOR_RIGHT);
 }
 
-inline static void motor_reset_control_state(enum motor_index index) {
-    struct motor_control_state_t *const _control = &control[index];
-
-    _control->velocity = 0.0f;
-    _control->gain_p = CONTROL_GAIN_P;
-    _control->gain_d = CONTROL_GAIN_D;
-    _control->current = motor_get_encoder_value(index);
-    _control->target = _control->current;
-    _control->error = 0;
-}
-
-void motor_start(void) {
+void motor_control_start(const motor_target_updater_t updater) {
     motor_pwm_enabled(MOTOR_LEFT, true);
     motor_pwm_enabled(MOTOR_RIGHT, true);
-    motor_reset_control_state(MOTOR_LEFT);
-    motor_reset_control_state(MOTOR_RIGHT);
 
-    timer_periodic_start(CONTROL_TIMER_SLOT, CONTROL_INTERVAL_US, motor_control_handler);
+    for (int i = 0; i < MOTOR_COUNT; i++) {
+        struct motor_control_state_t *const state = &control_state[i];
+
+        state->gain_p = MOTOR_CONTROL_GAIN_P;
+        state->gain_d = MOTOR_CONTROL_GAIN_D;
+        state->target = state->current = motor_get_encoder_value(i);
+        state->error = 0;
+    }
+
+    target_updater = updater;
+    timer_periodic_start(
+        MOTOR_CONTROL_TIMER_SLOT, MOTOR_CONTROL_INTERVAL_US, motor_control_handler);
 }
 
-void motor_stop(void) {
-    timer_periodic_stop(CONTROL_TIMER_SLOT);
+void motor_control_stop(void) {
+    timer_periodic_stop(MOTOR_CONTROL_TIMER_SLOT);
 
     motor_pwm_enabled(MOTOR_LEFT, false);
     motor_pwm_enabled(MOTOR_RIGHT, false);
 }
 
-void motor_set_velocity(const enum motor_index index, float velocity) {
-    control[index].velocity = velocity;
-}
-
-struct motor_control_state_t motor_get_control_state(const enum motor_index index) {
-    return control[index];
-}
-
 void motor_init(void) {
     motor_driver_init();
-    encoder_init();
+    motor_encoder_init();
 }

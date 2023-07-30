@@ -9,6 +9,7 @@
 #include "switch.h"
 
 #include "sensing.h"
+#include "config.h"
 
 /**
  * @brief 마크의 종류를 나타내는 타입
@@ -197,8 +198,20 @@ static inline void drive_control_acceleration_dt(enum motor_index index) {
         }
     }
 
-    motor_set_velocity(index, command); // 모터 속도 설정
     _control.velocity_command[index] = command; // 지령 속도 저장
+}
+
+/**
+ * @brief 모터 제어 시 호출되는 함수를 정의한다. 모터 제어를 시작할 때 함수의 주소를 전달한다.
+ *
+ * @param left 왼쪽 모터 지령 속도 포인터
+ * @param right 오른쪽 모터 지령 속도 포인터
+ */
+void drive_velocity_commander(int32_t *const left, int32_t *const right) {
+    const static float dt_s = (float)MOTOR_CONTROL_INTERVAL_US / (1000 * 1000);
+
+    *left += _control.velocity_command[MOTOR_LEFT] * dt_s;
+    *right += _control.velocity_command[MOTOR_RIGHT] * dt_s;
 }
 
 /**
@@ -216,7 +229,7 @@ static void drive_control_acceleration_handler(void) {
  */
 static void drive_control_enabled(bool enabled) {
     if (enabled) {
-        motor_start();
+        motor_control_start(drive_velocity_commander);
         timer_periodic_start(DRIVE_TIMER_SLOT, DRIVE_TIMER_INTERVAL_US, drive_control_acceleration_handler);
     } else {
         _control.velocity_target[MOTOR_LEFT] = 0.0f;
@@ -235,7 +248,7 @@ static void drive_control_enabled(bool enabled) {
         _control.velocity_command[MOTOR_RIGHT] = 0.0f;
 
         timer_periodic_stop(DRIVE_TIMER_SLOT);
-        motor_stop();
+        motor_control_stop();
     }
 }
 
