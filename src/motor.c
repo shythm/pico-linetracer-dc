@@ -6,24 +6,71 @@
  * 1. 모터 관련 주변 장치 초기화, 2. 모터 위치 제어 코드를 서술한다.
  */
 #include <stdlib.h>
+#include "config.h"
 #include "motor.h"
 #include "sensing.h"
 #include "timer.h"
 
-#define PWM_LEFT_GPIO        (14)
-#define PWM_RIGHT_GPIO       (15)
-#define DIRECTION_LEFT_GPIO  (16)
-#define DIRECTION_RIGHT_GPIO (17)
-#define ENCODER_PIO          (pio0)
-#define ENCODER_BASE_GPIO \
-    { 10, 12 }
-#define ENCODER_REVERSE \
-    { true, true }
+/**
+ * @brief 2개의 PIO(Programmable Input Ouput) 장치가 있다.
+ * 이 장치를 이용하면 PIO 전용 명령어들을 이용하여 GPIO에 대해 간단한 연산들을 수행할 수 있는데,
+ * 이는 CPU 자원을 이용하지 않고 PIO 장치에서 독립적으로 작동하기에 빠르고 효율적이다.
+ * 우리는 하나의 PIO에 quadrature encoder 프로그램을 올리고 이를 이용하고자 한다.
+ */
+static PIO encoder_pio = MOTOR_ENCODER_PIO;
 
-#define PI                 (3.141592f)
-#define ENCODER_RESOLUTION (2048)
-#define WHEEL_DIAMETER_M   (0.038f) // 바퀴의 지름(m)
-#define GEAR_RATIO         (17.f / 69.f) // 모터(17) / 바퀴(69) 기어비
+static struct encoder_t {
+    /**
+     * @brief 엔코더의 한 쪽의 GPIO 번호.
+     * 엔코더의 A상만 정의하는 이유는 PIO 프로그램에 의해 B상이 항상 A상 GPIO의 바로 다음 번호이기 때문이다.
+     */
+    const uint base_gpio;
+
+    /**
+     * @brief 엔코더 PIO의 state machine 번호.
+     * 하나의 PIO에 총 4개의 state machine이 존재하는데,
+     * 각 state machine은 동일한 PIO 프로그램에 대해 독립적인 상태를 가지는 인스턴스라고 보면 된다.
+     */
+    const uint sm;
+
+    /**
+     * @brief 엔코더 방향 보정 상수.
+     * 모터의 회전 방향과 엔코더의 측정 방향이 반대일 수 있다.
+     * 물리적인 축은 하나이고, 이에 종속된 두 기기(모터, 엔코더)가 방향을 서로 다르게 본다면 문제가 발생한다.
+     * 가령, 모터는 1000 만큼 갔다고 생각했는데, 엔코더는 -1000 만큼 갔다고 인식하면 문제가 생기는 것.
+     * 엔코더 값을 반환하는 함수를 호출할 때 이 값을 곱하여 보정한다.
+     */
+    const int32_t comp;
+
+} encoder[MOTOR_COUNT] = {
+    {
+        .base_gpio = MOTOR_ENCODER_GPIO_LEFT_BASE,
+        .sm = MOTOR_LEFT,
+        .comp = MOTOR_ENCODER_COMP_LEFT,
+    },
+    {
+        .base_gpio = MOTOR_ENCODER_GPIO_RIGHT_BASE,
+        .sm = MOTOR_RIGHT,
+        .comp = MOTOR_ENCODER_COMP_RIGHT,
+    }
+};
+
+#include "quadrature_encoder.pio.h"
+
+static inline void encoder_init() {
+    const uint instruction_offset = pio_add_program(encoder_pio, &quadrature_encoder_program);
+
+    for (int i = 0; i < MOTOR_COUNT; i++) {
+        quadrature_encoder_program_init(
+            encoder_pio, encoder[i].sm, instruction_offset, encoder[i].base_gpio, 0);
+    }
+}
+
+int32_t motor_get_encoder_value(enum motor_index index) {
+    int32_t value = quadrature_encoder_get_count(encoder_pio, encoder[index].sm);
+
+    return encoder[index].comp * value;
+}
 
 #define CONTROL_TIMER_SLOT  (TIMER_SLOT_1)
 #define CONTROL_INTERVAL_US (500)
@@ -32,7 +79,6 @@
 
 static const int dircomp[MOTOR_COUNT] = { -1, 1 }; // 모터 방향 보정 상수 (1 또는 -1)
 static struct motor_pwm_t pwm[MOTOR_COUNT];
-static struct motor_encoder_t encoder;
 static struct motor_control_state_t control[MOTOR_COUNT];
 
 /**
@@ -50,7 +96,7 @@ static inline void motor_control_dt(const enum motor_index index) {
     state->target += dircomp[index] * tick_per_meter * (state->velocity * dt_s); // 2 m/s - 35 tick/interval
 
     // 엔코더를 이용해 현재 모터의 위치를 구한다.
-    state->current = motor_encoder_get_value(&encoder, index);
+    state->current = motor_get_encoder_value(index);
 
     /**
      * 위치에 대한 목표값과 현재값의 차이(오차)를 계산 - 비례항을 위해
@@ -90,7 +136,7 @@ inline static void motor_reset_control_state(enum motor_index index) {
     _control->velocity = 0.0f;
     _control->gain_p = CONTROL_GAIN_P;
     _control->gain_d = CONTROL_GAIN_D;
-    _control->current = motor_encoder_get_value(&encoder, index);
+    _control->current = motor_get_encoder_value(index);
     _control->target = _control->current;
     _control->error = 0;
 }
@@ -120,12 +166,10 @@ struct motor_control_state_t motor_get_control_state(const enum motor_index inde
 }
 
 void motor_init(void) {
-    pwm[MOTOR_LEFT] = motor_pwm_init(PWM_LEFT_GPIO, DIRECTION_LEFT_GPIO);
-    pwm[MOTOR_RIGHT] = motor_pwm_init(PWM_RIGHT_GPIO, DIRECTION_RIGHT_GPIO);
+    pwm[MOTOR_LEFT] = motor_pwm_init(MOTOR_GPIO_PWM_LEFT, MOTOR_GPIO_DIRECTION_LEFT);
+    pwm[MOTOR_RIGHT] = motor_pwm_init(MOTOR_GPIO_PWM_RIGHT, MOTOR_GPIO_DIRECTION_RIGHT);
 
-    uint encoder_gpios[MOTOR_COUNT] = ENCODER_BASE_GPIO;
-    bool encoder_reverse[MOTOR_COUNT] = ENCODER_REVERSE;
-    encoder = motor_encoder_init(ENCODER_PIO, encoder_gpios, encoder_reverse);
+    encoder_init();
 }
 
 #include "switch.h"

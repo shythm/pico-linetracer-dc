@@ -22,6 +22,14 @@ enum motor_index {
     MOTOR_COUNT,
 };
 
+/**
+ * @brief 엔코더를 이용해 현재 모터의 위치를 반환한다.
+ *
+ * @param index 왼쪽 모터(MOTOR_LEFT) 또는 오른쪽 모터(MOTOR_RIGHT)
+ * @return int32_t 현재 모터의 위치
+ */
+int32_t motor_get_encoder_value(enum motor_index index);
+
 struct motor_pwm_t {
     uint gpio;
     uint direction_gpio;
@@ -103,70 +111,6 @@ static inline void motor_pwm_set_duty_ratio(struct motor_pwm_t *pwm, float duty_
 
 static inline void motor_pwm_set_direction(struct motor_pwm_t *pwm, bool value) {
     gpio_put(pwm->direction_gpio, value);
-}
-
-struct motor_encoder_t {
-    PIO pio;
-    struct {
-        uint base_gpio;
-        uint sm;
-        bool reverse;
-    } where[MOTOR_COUNT];
-};
-
-#include "quadrature_encoder.pio.h"
-static inline struct motor_encoder_t motor_encoder_init(const PIO pio, const uint gpio[], const bool reverse[]) {
-    /**
-     * RP2040에는 2개의 PIO(Programmable Input Ouput) 장치가 있다.
-     * 이 장치를 이용하면 PIO 전용 명령어들을 이용하여 GPIO에 대해 간단한 연산들을 수행할 수 있는데,
-     * 이는 CPU 자원을 이용하지 않고 PIO 장치에서 독립적으로 작동하기에 빠르고 효율적이다.
-     * 우리는 하나의 PIO에 quadrature encoder 프로그램을 올리고 이를 이용하고자 한다.
-     */
-    const uint instruction_offset = pio_add_program(pio, &quadrature_encoder_program);
-
-    /**
-     * quadrature encoder PIO의 state machine 번호. 하나의 PIO에 총 4개의 state machine이 존재하는데,
-     * 각 state machine은 동일한 PIO 프로그램에 대해 독립적인 상태를 가지는 인스턴스라고 보면 된다.
-     */
-    const uint left_sm = MOTOR_LEFT;
-    const uint right_sm = MOTOR_RIGHT;
-
-    /**
-     * PIO 엔코더 프로그램을 초기화한다. 이때, 왼쪽 엔코더 A상 GPIO와 오른쪽 엔코더 A상 GPIO를 이용한다.
-     * (!) 양쪽 엔코더의 A상만 정의하는 이유는 B상이 항상 A상 GPIO의 바로 다음 번호이기 때문이다.
-     */
-    quadrature_encoder_program_init(pio, left_sm, instruction_offset, gpio[MOTOR_LEFT], 0);
-    quadrature_encoder_program_init(pio, right_sm, instruction_offset, gpio[MOTOR_RIGHT], 0);
-
-    // encoder 정보 반환
-    struct motor_encoder_t ret = {
-        .pio = pio,
-        .where = {
-            {
-                .base_gpio = gpio[MOTOR_LEFT],
-                .sm = left_sm,
-                .reverse = reverse[MOTOR_LEFT], // 모터의 회전 방향과 엔코더의 측정 방향이 반대일 수 있다.
-            },
-            {
-                .base_gpio = gpio[MOTOR_RIGHT],
-                .sm = right_sm,
-                .reverse = reverse[MOTOR_RIGHT],
-            },
-        }
-    };
-    return ret;
-}
-
-static inline int32_t motor_encoder_get_value(struct motor_encoder_t *enc, enum motor_index index) {
-    int32_t value = quadrature_encoder_get_count(enc->pio, enc->where[index].sm);
-
-    /**
-     * 모터의 회전 방향과 엔코더의 측정 방향이 반대일 수 있다.
-     * 물리적인 축은 하나이고, 이에 종속된 두 기기(모터, 엔코더)가 방향을 서로 다르게 본다면 문제가 발생한다.
-     * 가령, 모터는 1000 만큼 갔다고 생각했는데, 엔코더는 -1000 만큼 갔다고 인식하면 문제가 생기는 것.
-     * 이에 따른 보정 절차를 수행하고 반환한다.
-     */
-    return enc->where[index].reverse ? -value : value;
 }
 
 struct motor_control_state_t {
