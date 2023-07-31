@@ -111,9 +111,9 @@ void menu_select(void) {
         oled_printf("/1%s", menu_name[menu_index]);
 
         if (sw == SWITCH_EVENT_BOTH) {
-            oled_clear_all();
+            oled_clear();
             menu_fp[menu_index]();
-            oled_clear_all();
+            oled_clear();
         } else if (sw == SWITCH_EVENT_RIGHT) {
             oled_printf("/1                ");
             menu_index = (menu_index + 1) % MENU_NUM;
@@ -131,7 +131,7 @@ int main(void) {
     sensing_init();
     motor_init();
     oled_init();
-    oled_clear_all();
+    oled_clear();
 
     sensing_set_enabled(true); // voltage sensing, ir sensing 수행
     menu_select();
@@ -164,7 +164,7 @@ void calibrate(void) {
     for (int i = 0; i < 16; i++)
         sensing_ir_bias[i] = maximum[i];
 
-    oled_clear_all();
+    oled_clear();
     oled_printf("/0 White Max  ");
     for (;;) {
         sw = switch_read_wait_ms(100);

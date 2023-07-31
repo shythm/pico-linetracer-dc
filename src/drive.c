@@ -125,7 +125,7 @@ static mark_t mark_update_state(mark_state_t *state) {
 void mark_test(void) {
     mark_state_t mark_state = MARK_STATE_IDLE;
 
-    oled_clear_all();
+    oled_clear();
     while (!switch_read_wait_ms(1)) {
         mark_t mark = mark_update_state(&mark_state);
 
@@ -303,7 +303,7 @@ static inline float drive_get_command_velocity(void) {
 void drive_first(void) {
     static float velocity = 2.0f;
 
-    oled_clear_all();
+    oled_clear();
     for (;;) {
         oled_printf("/0velo:");
         oled_printf("/1%1.2f  ", velocity);
@@ -317,7 +317,7 @@ void drive_first(void) {
             velocity += 0.1;
     }
 
-    oled_clear_all();
+    oled_clear();
     for (;;) {
         oled_printf("/0curv:");
         oled_printf("/1%1.6f  ", curve_coef);
@@ -331,7 +331,7 @@ void drive_first(void) {
             curve_coef += 0.00001;
     }
 
-    oled_clear_all();
+    oled_clear();
     for (;;) {
         oled_printf("/0decel:");
         oled_printf("/1%5d ", curve_decel);
@@ -374,7 +374,7 @@ void drive_first(void) {
 
     drive_control_enabled(false);
 
-    oled_clear_all();
+    oled_clear();
     while (switch_read_wait_ms(100) == SWITCH_EVENT_NONE) {
         if (mark_end_count == 2) {
             oled_printf("/0end mark");

@@ -7,6 +7,20 @@
 
 /* COMMON END */
 
+/* OLED BEGIN */
+
+#define OLED_SPI          spi0
+#define OLED_SPI_BUADRATE 8 * 1000 * 1000
+#define OLED_SPI_GPIO_SCL 2
+#define OLED_SPI_GPIO_SDA 3
+
+#define OLED_GPIO_DC 4
+#define OLED_GPIO_CS 5
+
+#define OLED_PRINT_BUFFER 256
+
+/* OLED END */
+
 /* DC MOTOR BEGIN */
 
 #define MOTOR_PWM_SLICE_NUM  (7)
