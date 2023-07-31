@@ -1,5 +1,5 @@
-#ifndef __SENSING_H_
-#define __SENSING_H_
+#ifndef _SENSING_H_
+#define _SENSING_H_
 
 #include "pico/types.h"
 

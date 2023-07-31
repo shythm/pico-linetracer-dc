@@ -144,4 +144,4 @@ const char STARFONT_ASCII[128][5] = {
     { 0x70, 0x48, 0x44, 0x48, 0x70 },
 };
 
-#endif /* INC_STARFONT_H_ */
+#endif

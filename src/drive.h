@@ -1,5 +1,5 @@
-#ifndef __DRIVE_H_
-#define __DRIVE_H
+#ifndef _DRIVE_H_
+#define _DRIVE_H_
 
 #include "motor.h"
 

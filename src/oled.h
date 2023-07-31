@@ -1,5 +1,5 @@
-#ifndef __PICO_SSD1331_SPI_H_
-#define __PICO_SSD1331_SPI_H_
+#ifndef _OLED_H_
+#define _OLED_H_
 
 #include "pico/types.h"
 

@@ -3,8 +3,8 @@
  * @author Seongho Lee
  * @brief Raspberry Pi Pico의 Alarm을 이용하여 주기적으로 인터럽트를 발생시킬 수 있는 기능을 제공하는 라이브러리
  */
-#ifndef __TIMER_H_
-#define __TIMER_H_
+#ifndef _TIMER_H_
+#define _TIMER_H_
 
 #include "pico/types.h"
 
