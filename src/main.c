@@ -25,7 +25,7 @@ void motor_pwm_test(void) {
     motor_pwm_enabled(MOTOR_RIGHT, true);
 
     for (;;) {
-        uint sw = switch_read_wait_ms(100);
+        uint sw = switch_read();
 
         if (sw == SWITCH_EVENT_LEFT)
             duty_ratio -= 0.1f;
@@ -60,7 +60,7 @@ void motor_position_test(void) {
     motor_control_start(motor_position_commander);
 
     for (;;) {
-        uint sw = switch_read_wait_ms(100);
+        uint sw = switch_read();
 
         if (sw == SWITCH_EVENT_LEFT)
             position_left += 50;
@@ -105,7 +105,7 @@ void menu_select(void) {
     uint menu_index = 0;
 
     for (;;) {
-        uint sw = switch_read_wait_ms(100);
+        uint sw = switch_read();
 
         oled_printf("/0   -MENU-   ");
         oled_printf("/1%s", menu_name[menu_index]);
@@ -139,7 +139,6 @@ int main(void) {
 }
 
 void calibrate(void) {
-    uint sw;
     uint maximum[16] = {
         0, 0, 0, 0,
         0, 0, 0, 0,
@@ -149,7 +148,7 @@ void calibrate(void) {
 
     oled_printf("/0 Black Max  ");
     for (;;) {
-        sw = switch_read_wait_ms(100);
+        uint sw = switch_read();
         if (sw == SWITCH_EVENT_BOTH)
             break;
         for (int i = 0; i < 16; i++) {
@@ -167,7 +166,7 @@ void calibrate(void) {
     oled_clear();
     oled_printf("/0 White Max  ");
     for (;;) {
-        sw = switch_read_wait_ms(100);
+        uint sw = switch_read();
         if (sw == SWITCH_EVENT_BOTH)
             break;
         for (int i = 0; i < 16; i++) {
@@ -185,7 +184,7 @@ void calibrate(void) {
 
 void cal_test(void) {
     for (;;) {
-        uint sw = switch_read_wait_ms(100);
+        uint sw = switch_read();
 
         if (sw == SWITCH_EVENT_BOTH)
             break;
@@ -199,7 +198,7 @@ void cal_test(void) {
 
 void set_threshold(void) {
     for (;;) {
-        uint sw = switch_read_wait_ms(100);
+        uint sw = switch_read();
 
         if (sw == SWITCH_EVENT_LEFT)
             sensing_ir_threshold -= 0.02f;
@@ -216,7 +215,7 @@ void set_threshold(void) {
 
 void state_test(void) {
     for (;;) {
-        uint sw = switch_read_wait_ms(100);
+        uint sw = switch_read();
 
         if (sw == SWITCH_EVENT_BOTH)
             break;
@@ -229,7 +228,7 @@ void state_test(void) {
 
 void position_test(void) {
     for (;;) {
-        uint sw = switch_read_wait_ms(100);
+        uint sw = switch_read();
 
         if (sw == SWITCH_EVENT_BOTH)
             break;

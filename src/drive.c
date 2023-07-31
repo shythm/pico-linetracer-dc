@@ -128,7 +128,7 @@ void mark_test(void) {
     mark_state_t mark_state = MARK_STATE_IDLE;
 
     oled_clear();
-    while (!switch_read_wait_ms(1)) {
+    while (!switch_read()) {
         mark_t mark = mark_update_state(&mark_state);
 
         switch (mark_state) {
@@ -310,7 +310,7 @@ void drive_first(void) {
         oled_printf("/0velo:");
         oled_printf("/1%1.2f  ", velocity);
 
-        uint sw = switch_read_wait_ms(100);
+        uint sw = switch_read();
         if (sw == SWITCH_EVENT_BOTH)
             break;
         else if (sw == SWITCH_EVENT_LEFT)
@@ -324,7 +324,7 @@ void drive_first(void) {
         oled_printf("/0curv:");
         oled_printf("/1%1.6f  ", curve_coef);
 
-        uint sw = switch_read_wait_ms(100);
+        uint sw = switch_read();
         if (sw == SWITCH_EVENT_BOTH)
             break;
         else if (sw == SWITCH_EVENT_LEFT)
@@ -338,7 +338,7 @@ void drive_first(void) {
         oled_printf("/0decel:");
         oled_printf("/1%5d ", curve_decel);
 
-        uint sw = switch_read_wait_ms(100);
+        uint sw = switch_read();
         if (sw == SWITCH_EVENT_BOTH)
             break;
         else if (sw == SWITCH_EVENT_LEFT)
@@ -377,7 +377,7 @@ void drive_first(void) {
     drive_control_enabled(false);
 
     oled_clear();
-    while (switch_read_wait_ms(100) == SWITCH_EVENT_NONE) {
+    while (switch_read() == SWITCH_EVENT_NONE) {
         if (mark_end_count == 2) {
             oled_printf("/0end mark");
         } else {

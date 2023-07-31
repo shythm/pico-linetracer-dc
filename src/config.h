@@ -7,6 +7,18 @@
 
 /* COMMON END */
 
+/* SWITCH BEGIN */
+
+#define SWITCH_GPIO_LEFT  (0)
+#define SWITCH_GPIO_RIGHT (1)
+
+/** @brief Bouncing 방지를 위해 클릭 후 잠시 대기하는 시간(us) */
+#define SWITCH_TIME_SHORT ((50) * (1000))
+/** @brief 스위치 클릭 이벤트 발생 주기(us) */
+#define SWITCH_TIME_LONG ((200) * (1000))
+
+/* SWITCH END */
+
 /* OLED BEGIN */
 
 #define OLED_SPI          spi0
