@@ -1,5 +1,6 @@
 #include "drive.h"
 #include <stdlib.h>
+#include <math.h>
 
 #include "pico.h"
 #include "pico/types.h"
@@ -164,13 +165,13 @@ void mark_test(void) {
 #define DRIVE_TIMER_INTERVAL_US 500
 
 static volatile struct drive_control {
-    float velocity_command[MOTOR_COUNT];
-    float velocity_target[MOTOR_COUNT];
+    float velocity_command;
+    float velocity_target;
     float acceleration;
     float deceleration;
 } _control = {
-    .velocity_command = { 0.0f, 0.0f },
-    .velocity_target = { 0.0f, 0.0f },
+    .velocity_command = 0.0f,
+    .velocity_target = 0.0f,
     .acceleration = 4.0f,
     .deceleration = 6.0f,
 };
@@ -180,11 +181,11 @@ static volatile struct drive_control {
  *
  * @param index 왼쪽 모터(MOTOR_DC_LEFT) 또는 오른쪽 모터(MOTOR_DC_RIGHT)
  */
-static inline void drive_control_acceleration_dt(enum motor_index index) {
-    static const float dt_s = (DRIVE_TIMER_INTERVAL_US * 0.001) * 0.001;
+static inline void drive_control_acceleration_handler(void) {
+    static const float dt_s = (float)DRIVE_TIMER_INTERVAL_US / (1000 * 1000);
 
-    float command = _control.velocity_command[index]; // 지령 속도 가져옴
-    float target = _control.velocity_target[index]; // 외부로부터 지정된 목표 속도
+    float command = _control.velocity_command; // 지령 속도 가져옴
+    float target = _control.velocity_target; // 외부로부터 지정된 목표 속도
 
     if (command < target) {
         command += _control.acceleration * dt_s;
@@ -198,8 +199,11 @@ static inline void drive_control_acceleration_dt(enum motor_index index) {
         }
     }
 
-    _control.velocity_command[index] = command; // 지령 속도 저장
+    _control.velocity_command = command; // 지령 속도 저장
 }
+
+static int curve_decel = 16000; // 커브 감속 (작을 수록 곡선에서 감속을 많이 한다)
+static float curve_coef = 0.00007f; // 곡률 계수
 
 /**
  * @brief 모터 제어 시 호출되는 함수를 정의한다. 모터 제어를 시작할 때 함수의 주소를 전달한다.
@@ -210,16 +214,18 @@ static inline void drive_control_acceleration_dt(enum motor_index index) {
 void drive_velocity_commander(int32_t *const left, int32_t *const right) {
     const static float dt_s = (float)MOTOR_CONTROL_INTERVAL_US / (1000 * 1000);
 
-    *left += _control.velocity_command[MOTOR_LEFT] * dt_s;
-    *right += _control.velocity_command[MOTOR_RIGHT] * dt_s;
-}
+    const int position = sensing_get_position();
+    // 곡선 감속
+    float v_center =
+        _control.velocity_command / (1 + abs(position) / (float)curve_decel);
 
-/**
- * @brief 모터의 가감속 제어를 수행하는 타이머 IRQ Handler
- */
-static void drive_control_acceleration_handler(void) {
-    drive_control_acceleration_dt(MOTOR_LEFT);
-    drive_control_acceleration_dt(MOTOR_RIGHT);
+    // 좌우 모터 속도 조절
+    float kp = curve_coef * position;
+    float v_left = v_center * (1.f - kp);
+    float v_right = v_center * (1.f + kp);
+
+    *left -= MOTOR_TICK_PER_METER * v_left * dt_s;
+    *right += MOTOR_TICK_PER_METER * v_right * dt_s;
 }
 
 /**
@@ -232,43 +238,34 @@ static void drive_control_enabled(bool enabled) {
         motor_control_start(drive_velocity_commander);
         timer_periodic_start(DRIVE_TIMER_SLOT, DRIVE_TIMER_INTERVAL_US, drive_control_acceleration_handler);
     } else {
-        _control.velocity_target[MOTOR_LEFT] = 0.0f;
-        _control.velocity_target[MOTOR_RIGHT] = 0.0f;
+        _control.velocity_target = 0.0f;
 
         for (;;) {
-            float command_avg =
-                (_control.velocity_command[MOTOR_LEFT] + _control.velocity_command[MOTOR_RIGHT]) / 2;
-
-            if (command_avg < 0.1f) {
+            if (_control.velocity_command < 0.1f) {
                 break;
             }
         }
-
-        _control.velocity_command[MOTOR_LEFT] = 0.0f;
-        _control.velocity_command[MOTOR_RIGHT] = 0.0f;
+        _control.velocity_command = 0.0f;
 
         timer_periodic_stop(DRIVE_TIMER_SLOT);
         motor_control_stop();
     }
 }
 
+static inline void drive_set_target_velocity(float velocity) {
+    _control.velocity_target = velocity;
+}
+
+static inline float drive_get_command_velocity(void) {
+    return _control.velocity_command;
+}
+
 static inline bool drive_is_on_line(void) {
     return __builtin_popcount(sensing_get_ir_state() & mark_mask.all);
 }
 
-static inline void drive_set_velocity(enum motor_index index, float velocity) {
-    _control.velocity_target[index] = velocity;
-}
-
-static inline float drive_get_velocity(void) {
-    return (_control.velocity_command[MOTOR_LEFT] + _control.velocity_command[MOTOR_RIGHT]) / 2;
-}
-
 void drive_first(void) {
     static float velocity = 2.0f;
-
-    static int curve_decel = 8000; // 커브 감속 (작을 수록 곡선에서 감속을 많이 한다)
-    static float curve_coef = 0.00007f; // 곡률 계수
 
     oled_clear_all();
     for (;;) {
@@ -316,6 +313,8 @@ void drive_first(void) {
     uint mark_end_count = 0;
 
     drive_control_enabled(true);
+    drive_set_target_velocity(velocity);
+
     while (drive_is_on_line()) {
 
         mark_t mark = mark_update_state(&mark_state);
@@ -323,21 +322,12 @@ void drive_first(void) {
             mark_end_count++;
         }
 
-        // 곡선 감속
-        float velocity_center = velocity / (1 + abs(sensing_get_position()) / (float)curve_decel);
-
-        // 좌우 모터 속도 조절
-        float kp = curve_coef * sensing_get_position();
-        drive_set_velocity(MOTOR_LEFT, velocity_center * (1.f - kp));
-        drive_set_velocity(MOTOR_RIGHT, velocity_center * (1.f + kp));
-
         if (mark_end_count == 2) {
             // fit-in 2as = 나중속도^2 - 처음속도^2
 
-            _control.deceleration = drive_get_velocity() * drive_get_velocity() / (2 * 0.3);
-            drive_set_velocity(MOTOR_LEFT, 0.0f);
-            drive_set_velocity(MOTOR_RIGHT, 0.0f);
-            while (drive_get_velocity() > 0.1f) {
+            _control.deceleration = powf(drive_get_command_velocity(), 2) / (2.0f * 0.3f);
+            drive_set_target_velocity(0.0f);
+            while (drive_get_command_velocity() > 0.1f) {
                 tight_loop_contents();
             }
             break;

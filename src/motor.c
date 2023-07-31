@@ -172,11 +172,11 @@ static inline void motor_control_dt(const enum motor_index index) {
      * Case 2: "현재 오차 < 이전 오차"인 경우, 음의 제어값으로 Overshoot 현상을 방지함.
      * Case 3: "현재 오차 = 이전 오차"인 경우, 아무런 제어를 하지 않을 것.
      */
-    const float error_diff = (error - state->error) / dt_s;
+    const float error_diff = error - state->error;
 
     // 오차와 오차의 차이에 각각 비례 상수를 곱하고 이들의 합을 구해 최종적으로 모터에 인가될 전압을 계산한다.
-    // const float voltage = state->gain_p * error + state->gain_d * error_diff;
-    const float voltage = state->gain_p * error;
+    const float voltage = state->gain_p * error + state->gain_d * error_diff;
+    // const float voltage = state->gain_p * error;
 
     // PWM duty ratio 계산 및 적용
     const float duty_ratio = voltage / sensing_get_supply_voltage();

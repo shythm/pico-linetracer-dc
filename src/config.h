@@ -26,8 +26,8 @@
 
 #define MOTOR_CONTROL_TIMER_SLOT  (TIMER_SLOT_1)
 #define MOTOR_CONTROL_INTERVAL_US (500)
-#define MOTOR_CONTROL_GAIN_P      (0.04f)
-#define MOTOR_CONTROL_GAIN_D      (0.02f)
+#define MOTOR_CONTROL_GAIN_P      (0.2f)
+#define MOTOR_CONTROL_GAIN_D      (0.1f)
 
 /**
  * @brief 바퀴 지름 1미터 당 엔코더 몇 틱인지에 대한 상수

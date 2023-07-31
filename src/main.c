@@ -45,7 +45,40 @@ void motor_pwm_test(void) {
     motor_pwm_enabled(MOTOR_RIGHT, false);
 }
 
+int32_t position_left = 0;
+int32_t position_right = 0;
+
+void motor_position_commander(int32_t *const left, int32_t *const right) {
+    *left = position_left;
+    *right = position_right;
+}
+
+void motor_position_test(void) {
+    position_left = motor_get_encoder_value(MOTOR_LEFT);
+    position_right = motor_get_encoder_value(MOTOR_RIGHT);
+
+    motor_control_start(motor_position_commander);
+
+    for (;;) {
+        uint sw = switch_read_wait_ms(100);
+
+        if (sw == SWITCH_EVENT_LEFT)
+            position_left += 50;
+        else if (sw == SWITCH_EVENT_RIGHT)
+            position_right += 50;
+        else if (sw == SWITCH_EVENT_BOTH)
+            break;
+
+        oled_printf("/0m_pos_test");
+        oled_printf("/1pos_left/2%10d", position_left);
+        oled_printf("/3pos_right/4%10d", position_right);
+    }
+
+    motor_control_stop();
+}
+
 void (*menu_fp[MENU_NUM])(void) = {
+    motor_position_test,
     motor_pwm_test,
     calibrate,
     cal_test,
@@ -57,6 +90,7 @@ void (*menu_fp[MENU_NUM])(void) = {
 };
 
 char menu_name[MENU_NUM][16] = {
+    "MotorPosTest",
     "PWM Test",
     "Calibration",
     "Calib Test",
