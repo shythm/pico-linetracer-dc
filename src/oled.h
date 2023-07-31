@@ -53,7 +53,7 @@ enum oled_colors {
     OLED_COLOR_DARK = 0x0000,
 };
 
-typedef uint16_t oled_color_t;
+typedef enum oled_colors oled_color_t;
 
 /**
  * @brief 지정된 위치에 문자 하나를 출력하는 함수.
