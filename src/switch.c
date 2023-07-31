@@ -1,20 +1,18 @@
 /**
  * @file switch.c
  * @author Joonho Gwon (Modified by Seongho Lee)
- * @brief STM32F411 Nucleo Board에서 사용하면 Switch 라이브러리를 Raspberry Pi Pico에 맞게 포팅 및 수정한 소스코드
- * @date 2023-01-26
+ * @brief bi-switch driver
+ *
+ * 2021-04-11: Implement basic switch input function
+ * 2023-01-26: Nucleo-F411 보드에서 사용하면 Switch 라이브러리를 RPI Pico에 맞게 포팅
+ * 2023-08-01: busy wait하지 않고, 함수가 호출될 때 매번 그 시각을 측정하여 경과 시간에 대한 로직을 처리했다.
  */
 
-#include "switch.h"
-
-#include "pico/time.h"
+#include "hardware/timer.h"
 #include "hardware/gpio.h"
 
-typedef struct {
-    const uint gpio;
-    uint timer;
-    uint state;
-} switch_state_t;
+#include "switch.h"
+#include "config.h"
 
 enum switch_index {
     SWITCH_L = 0,
@@ -22,9 +20,13 @@ enum switch_index {
     SWITCH_COUNT,
 };
 
-switch_state_t switch_state[SWITCH_COUNT] = {
-    { .gpio = SWITCH_LEFT_GPIO },
-    { .gpio = SWITCH_RIGHT_GPIO },
+struct switch_t {
+    const uint gpio;
+    uint32_t timer;
+    uint state;
+} _switch[SWITCH_COUNT] = {
+    { .gpio = SWITCH_GPIO_LEFT },
+    { .gpio = SWITCH_GPIO_RIGHT },
 };
 
 #define SWITCH_STATE_LONG_OFF  0x01 // 0001
@@ -32,7 +34,7 @@ switch_state_t switch_state[SWITCH_COUNT] = {
 #define SWITCH_STATE_LONG_ON   0x04 // 0100
 #define SWITCH_STATE_SHORT_OFF 0x08 // 1000
 
-static bool switch_state_machine(switch_state_t *pstate) {
+static bool switch_state_machine(struct switch_t *psw) {
     /*
      * 스위치가 눌리거나 떼질 때, 그 값이 한 번에 깔끔하게 변하지 않고 아주 짧은 시간동안 On, Off를 수십~수백번 반복한다.
      * 이를 Bouncing 혹은 Chattering이라 한다. Bouncing의 특징은 일반적인 노이즈와 다르게
@@ -65,44 +67,42 @@ static bool switch_state_machine(switch_state_t *pstate) {
      * 그러므로 Long-On 상태에 있을 때 타이머를 하나 둔 후, 만약 그 타이머가 0 이하로 떨어질 경우 이벤트를 발생시키고 다시 타이머를 초기화하면 된다.
      */
 
-    bool clicked = !(gpio_get(pstate->gpio));
+    bool clicked = !(gpio_get(psw->gpio));
     bool click_event = false;
+    uint32_t time = time_us_32();
 
-    switch (pstate->state) {
-
+    switch (psw->state) {
     case SWITCH_STATE_LONG_OFF:
         if (clicked) {
-            pstate->timer = SWITCH_TIME_SHORT;
-            pstate->state = SWITCH_STATE_SHORT_ON;
+            psw->timer = time + SWITCH_TIME_SHORT;
+            psw->state = SWITCH_STATE_SHORT_ON;
         }
         break;
 
     case SWITCH_STATE_SHORT_ON:
-        pstate->timer--;
-        if (pstate->timer == 0) {
+        if (psw->timer < time) {
             click_event = true;
-            pstate->timer = SWITCH_TIME_LONG;
-            pstate->state = SWITCH_STATE_LONG_ON;
+            psw->timer = time + SWITCH_TIME_LONG;
+            psw->state = SWITCH_STATE_LONG_ON;
         }
         break;
 
     case SWITCH_STATE_LONG_ON:
         if (!clicked) {
-            pstate->timer = SWITCH_TIME_SHORT;
-            pstate->state = SWITCH_STATE_SHORT_OFF;
+            psw->timer = time + SWITCH_TIME_SHORT;
+            psw->state = SWITCH_STATE_SHORT_OFF;
             break;
         }
-        pstate->timer--;
-        if (pstate->timer == 0) {
+
+        if (psw->timer < time) {
             click_event = true;
-            pstate->timer = SWITCH_TIME_LONG;
+            psw->timer = time + SWITCH_TIME_LONG;
         }
         break;
 
     case SWITCH_STATE_SHORT_OFF:
-        pstate->timer--;
-        if (pstate->timer == 0) {
-            pstate->state = SWITCH_STATE_LONG_OFF;
+        if (psw->timer < time) {
+            psw->state = SWITCH_STATE_LONG_OFF;
         }
         break;
     }
@@ -110,55 +110,50 @@ static bool switch_state_machine(switch_state_t *pstate) {
     return click_event;
 }
 
-static inline void switch_state_copy(switch_state_t *src, switch_state_t *dest) {
+void switch_init(void) {
+    for (int i = 0; i < SWITCH_COUNT; i++) {
+        struct switch_t *const state = &_switch[i];
+
+        // GPIO 초기화
+        gpio_init(state->gpio);
+        gpio_set_dir(state->gpio, GPIO_IN);
+        gpio_pull_up(state->gpio);
+
+        // 스위치 관련 state 초기화
+        state->timer = 0;
+        state->state = SWITCH_STATE_LONG_OFF;
+    }
+}
+
+static inline void switch_copy(struct switch_t *dest, struct switch_t *src) {
     dest->state = src->state;
     dest->timer = src->timer;
 }
 
-void switch_init(void) {
-    // 왼쪽 스위치 GPIO 초기화
-    gpio_init(SWITCH_LEFT_GPIO);
-    gpio_set_dir(SWITCH_LEFT_GPIO, GPIO_IN);
-    gpio_pull_up(SWITCH_LEFT_GPIO);
-
-    // 오른쪽 스위치 GPIO 초기화
-    gpio_init(SWITCH_RIGHT_GPIO);
-    gpio_set_dir(SWITCH_RIGHT_GPIO, GPIO_IN);
-    gpio_pull_up(SWITCH_RIGHT_GPIO);
-
-    // 스위치 관련 state 초기화
-    for (int i = 0; i < 2; i++) {
-        switch_state[i].timer = 0;
-        switch_state[i].state = SWITCH_STATE_LONG_OFF;
-    }
-}
-
-switch_event_t switch_read(void) {
-    sleep_ms(1);
-
+enum switch_event_t switch_read(void) {
     /*
-     * 1ms 마다 진행되는 State Machine을 통해 스위치의 눌림 여부를 결정한다.
+     * 스위치의 눌림 여부를 결정한다.
      */
-    bool clicked_l = switch_state_machine(&switch_state[SWITCH_L]);
-    bool clicked_r = switch_state_machine(&switch_state[SWITCH_R]);
+    bool clicked_l = switch_state_machine(&_switch[SWITCH_L]);
+    bool clicked_r = switch_state_machine(&_switch[SWITCH_R]);
 
     /*
      * 다음으로 버튼이 두 개인 경우를 고려하자.
      * 버튼 두 개를 동시에 누를 경우, 버튼 두 개가 동시에 이벤트가 발생해야 한다.
-     * 그런데 위의 알고리즘을 따른다면  양쪽 버튼을 아주 짧은 시간 간격을 두고 누른다 하더라도 제대로 동시 입력으로 간주되지 않을 것이다.
+     * 그런데 위의 알고리즘을 따른다면 양쪽 버튼을 아주 짧은 시간 간격을 두고 누른다 하더라도 제대로 동시 입력으로 간주되지 않을 것이다.
      * 물론 그 차이가 1ms이하라면 그런 문제가 발생하지 않겠지만, 이는 거의 불가능하다.
      * 이를 해결하기 위해서는 한쪽 버튼이 Long-On으로 넘어갈 때 다른 쪽 버튼이 Short-On 상태에 있다면 강제로 Long-On상태로 넘겨버리면 된다.
      */
-    if (clicked_l && (switch_state[SWITCH_R].state & SWITCH_STATE_SHORT_ON)) {
-        switch_state_copy(&switch_state[SWITCH_L], &switch_state[SWITCH_R]);
+    if (clicked_l && (_switch[SWITCH_R].state & SWITCH_STATE_SHORT_ON)) {
+        switch_copy(&_switch[SWITCH_R], &_switch[SWITCH_L]);
         clicked_r = true;
     }
-    if (clicked_r && (switch_state[SWITCH_L].state & SWITCH_STATE_SHORT_ON)) {
-        switch_state_copy(&switch_state[SWITCH_R], &switch_state[SWITCH_L]);
+    if (clicked_r && (_switch[SWITCH_L].state & SWITCH_STATE_SHORT_ON)) {
+        switch_copy(&_switch[SWITCH_L], &_switch[SWITCH_R]);
         clicked_l = true;
     }
 
-    switch_event_t ret = 0;
+    enum switch_event_t ret = 0;
     if (clicked_l) {
         ret |= SWITCH_EVENT_LEFT;
     }
@@ -167,17 +162,4 @@ switch_event_t switch_read(void) {
     }
 
     return ret;
-}
-
-switch_event_t switch_read_wait_ms(uint ms) {
-    // switch_read 함수가 기본적으로 약 1ms 딜레이를 가지므로
-    // 아래의 반복문을 ms만큼 도는 것이 ms만큼 기다리는 것과 동등한 행위가 된다.
-    for (int i = 0; i < ms; i++) {
-        switch_event_t sw = switch_read();
-        if (sw) {
-            return sw;
-        }
-    }
-
-    return SWITCH_EVENT_NONE;
 }
