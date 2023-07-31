@@ -161,6 +161,46 @@ void mark_test(void) {
     }
 }
 
+static inline bool _is_on_line(void) {
+    return __builtin_popcount(sensing_get_ir_state() & mark_mask.all);
+}
+
+typedef uint line_out_state_t;
+#define LINE_OUT_STATE_IDLE (line_out_state_t)0x00
+#define LINE_OUT_STATE_TRIG (line_out_state_t)0x01
+#define LINE_OUT_STATE_EXIT (line_out_state_t)0x04
+
+#define LINE_OUT_TIME_US ((200) * (1000))
+
+static bool line_out_update_state(line_out_state_t *state) {
+    static uint32_t time;
+
+    switch (*state) {
+    case LINE_OUT_STATE_IDLE:
+        if (!_is_on_line()) {
+            *state = LINE_OUT_STATE_TRIG;
+            time = time_us_32();
+        }
+        break;
+
+    case LINE_OUT_STATE_TRIG:
+        if (_is_on_line()) {
+            *state = LINE_OUT_STATE_IDLE;
+        } else {
+            if (time_us_32() - time > LINE_OUT_TIME_US) {
+                *state = LINE_OUT_STATE_EXIT;
+            }
+        }
+        break;
+
+    case LINE_OUT_STATE_EXIT:
+        *state = LINE_OUT_STATE_IDLE;
+        return true;
+    }
+
+    return false;
+}
+
 #define DRIVE_TIMER_SLOT        TIMER_SLOT_2
 #define DRIVE_TIMER_INTERVAL_US 500
 
@@ -202,11 +242,11 @@ static inline void drive_control_acceleration_handler(void) {
     _control.velocity_command = command; // 지령 속도 저장
 }
 
-static int curve_decel = 16000; // 커브 감속 (작을 수록 곡선에서 감속을 많이 한다)
+static int curve_decel = 24000; // 커브 감속 (작을 수록 곡선에서 감속을 많이 한다)
 static float curve_coef = 0.00007f; // 곡률 계수
 
 /**
- * @brief 모터 제어 시 호출되는 함수를 정의한다. 모터 제어를 시작할 때 함수의 주소를 전달한다.
+ * @brief 모터 제어 시 호출되는 함수를 정의한다. 모터 제어를 시작할 때 이 함수를 전달한다.
  *
  * @param left 왼쪽 모터 지령 속도 포인터
  * @param right 오른쪽 모터 지령 속도 포인터
@@ -260,10 +300,6 @@ static inline float drive_get_command_velocity(void) {
     return _control.velocity_command;
 }
 
-static inline bool drive_is_on_line(void) {
-    return __builtin_popcount(sensing_get_ir_state() & mark_mask.all);
-}
-
 void drive_first(void) {
     static float velocity = 2.0f;
 
@@ -310,12 +346,15 @@ void drive_first(void) {
     }
 
     mark_state_t mark_state = MARK_STATE_IDLE;
+    line_out_state_t line_out_state = LINE_OUT_STATE_IDLE;
+
     uint mark_end_count = 0;
+    bool line_out_trigger = false;
 
     drive_control_enabled(true);
     drive_set_target_velocity(velocity);
 
-    while (drive_is_on_line()) {
+    while (!line_out_update_state(&line_out_state)) {
 
         mark_t mark = mark_update_state(&mark_state);
         if (mark == MARK_BOTH) {
@@ -323,17 +362,24 @@ void drive_first(void) {
         }
 
         if (mark_end_count == 2) {
-            // fit-in 2as = 나중속도^2 - 처음속도^2
-
-            _control.deceleration = powf(drive_get_command_velocity(), 2) / (2.0f * 0.3f);
+            _control.deceleration = powf(drive_get_command_velocity(), 2) / (2.0f * 0.25f);
             drive_set_target_velocity(0.0f);
             while (drive_get_command_velocity() > 0.1f) {
                 tight_loop_contents();
             }
+            sleep_ms(100);
             break;
         }
     }
 
-    sleep_ms(100);
     drive_control_enabled(false);
+
+    oled_clear_all();
+    while (switch_read_wait_ms(100) == SWITCH_EVENT_NONE) {
+        if (mark_end_count == 2) {
+            oled_printf("/0end mark");
+        } else {
+            oled_printf("/0line out");
+        }
+    }
 }

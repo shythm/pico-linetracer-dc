@@ -191,7 +191,7 @@ volatile int sensing_ir_range[SENSING_IR_COUNT] = {
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, //
 };
 volatile int _sensing_ir_normalized[SENSING_IR_COUNT];
-volatile float sensing_ir_threshold = 0.3f;
+volatile float sensing_ir_threshold = 0.2f;
 volatile sensing_ir_state_t _sensing_ir_state;
 volatile int _sensing_position;
 
