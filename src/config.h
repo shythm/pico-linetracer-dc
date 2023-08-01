@@ -4,6 +4,13 @@
 /* COMMON BEGIN */
 
 #define PI (3.141592f)
+#ifndef MAX
+#define MAX(a, b) (((a) > (b)) ? (a) : (b))
+#endif
+
+#ifndef MIN
+#define MIN(a, b) (((a) < (b)) ? (a) : (b))
+#endif
 
 /* COMMON END */
 
@@ -21,17 +28,40 @@
 
 /* OLED BEGIN */
 
-#define OLED_SPI          spi0
-#define OLED_SPI_BUADRATE 8 * 1000 * 1000
-#define OLED_SPI_GPIO_SCL 2
-#define OLED_SPI_GPIO_SDA 3
+#define OLED_SPI          (spi0)
+#define OLED_SPI_BUADRATE ((8) * (1000) * (1000))
+#define OLED_SPI_GPIO_SCL (2)
+#define OLED_SPI_GPIO_SDA (3)
 
-#define OLED_GPIO_DC 4
-#define OLED_GPIO_CS 5
+#define OLED_GPIO_DC (4)
+#define OLED_GPIO_CS (5)
 
-#define OLED_PRINT_BUFFER 256
+#define OLED_PRINT_BUFFER (256)
 
 /* OLED END */
+
+/* SENSING BEGIN */
+
+#define SENSING_IR_COUNT             (16)
+#define SENSING_IR_MUX_GPIO_SEL0     (6)
+#define SENSING_IR_MUX_GPIO_SEL1     (7)
+#define SENSING_IR_MUX_GPIO_SEL2     (8)
+#define SENSING_IR_MUX_GPIO_OUT      (9)
+#define SENSING_IR_THRESHOLD_DEFAULT (0.2f)
+
+#define SENSING_IR_MUX_GPIO_IN_A (27)
+#define SENSING_IR_MUX_GPIO_IN_B (28)
+
+/**
+ * @brief ADC로부터 얻은 데이터를 실제 전압으로 바꿔주는 계산식
+ */
+#define SENSING_EXPR_RAW_TO_VOLTAGE(X) (((3.3f) / (4096.0f) * (21.0f) / (1.0f)) * (X))
+#define SENSING_VOLTAGE_GPIO           (26)
+
+#define SENSING_TIMER_SLOT        (TIMER_SLOT_0)
+#define SENSING_TIMER_INTERVAL_US (500)
+
+/* SENSING END */
 
 /* DC MOTOR BEGIN */
 
@@ -62,5 +92,26 @@
     ((float)(MOTOR_ENCODER_RESOLUTION) / (MOTOR_WHEEL_DIAMETER_M * PI) / (MOTOR_GEAR_RATIO))
 
 /* DC MOTOR END */
+
+/* MARK BEGIN */
+
+#define MARK_MASK_LEFT_DEFAULT  (0xF000) // 1111 0000 0000 0000
+#define MARK_MASK_RIGHT_DEFAULT (0x000F) // 0000 0000 0000 1111
+#define MARK_MASK_ALL           (0xFFFF) // 1111 1111 1111 1111
+
+/* MARK END */
+
+/* DRIVE BEGIN */
+
+#define DRIVE_MARK_COUNT_MAX   (400)
+#define DRIVE_LINE_OUT_TIME_US ((200) * (1000))
+
+/* DRIVE END */
+
+/* FLASH BEGIN */
+
+#define FLASH_LOAD_DEFAULT (true)
+
+/* FLASH END */
 
 #endif

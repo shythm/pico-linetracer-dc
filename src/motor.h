@@ -7,6 +7,7 @@
 #define _MOTOR_H_
 
 #include "pico/types.h"
+#include "config.h"
 
 enum motor_index {
     MOTOR_LEFT = 0,
@@ -25,10 +26,9 @@ int32_t motor_get_encoder_value(enum motor_index index);
 /**
  * @brief 모터 PWM 활성화 여부를 결정한다.
  *
- * @param index MOTOR_LEFT(왼쪽 모터) 또는 MOTOR_RIGHT(오른쪽 모터)
  * @param enabled true(활성화) 또는 false(비활성화)
  */
-void motor_pwm_enabled(enum motor_index index, const bool enabled);
+void motor_pwm_enabled(const bool enabled);
 
 /**
  * @brief 모터 PWM의 듀티 사이클을 설정한다. 그리고 모터의 회전 방향도 설정한다.

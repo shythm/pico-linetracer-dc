@@ -15,6 +15,7 @@ add_executable(pico_linetracer_dc
     ./src/motor.c
     ./src/switch.c
     ./src/oled.c
+    ./src/mark.c
     ./src/drive.c
     ./src/fs.c
 )

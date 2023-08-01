@@ -8,8 +8,8 @@
 #include "hardware/pwm.h"
 #include "hardware/pio.h"
 #include "hardware/clocks.h"
+#include "hardware/timer.h"
 
-#include "config.h"
 #include "motor.h"
 #include "sensing.h"
 #include "timer.h"
@@ -125,8 +125,13 @@ static inline void motor_driver_init() {
     }
 }
 
-void motor_pwm_enabled(enum motor_index index, const bool enabled) {
-    pwm_set_chan_level(pwm_slice_num, index, 0);
+void motor_pwm_enabled(const bool enabled) {
+    pwm_set_chan_level(pwm_slice_num, MOTOR_LEFT, 0);
+    pwm_set_chan_level(pwm_slice_num, MOTOR_RIGHT, 0);
+
+    // PWM을 비활성화 할 때, counter 레지스터에 따라 해당 핀의 Low/High가 결정된다.
+    // level을 0으로 두고, 해당 핀이 Low가 될 때까지 기다려준다. 약 1ms 정도.
+    busy_wait_ms(1);
     pwm_set_enabled(pwm_slice_num, enabled);
 }
 
@@ -176,10 +181,9 @@ static inline void motor_control_dt(const enum motor_index index) {
 
     // 오차와 오차의 차이에 각각 비례 상수를 곱하고 이들의 합을 구해 최종적으로 모터에 인가될 전압을 계산한다.
     const float voltage = state->gain_p * error + state->gain_d * error_diff;
-    // const float voltage = state->gain_p * error;
 
     // PWM duty ratio 계산 및 적용
-    const float duty_ratio = voltage / sensing_get_supply_voltage();
+    const float duty_ratio = voltage / sensing_supply_voltage;
     motor_set_pwm_duty_ratio(index, duty_ratio); // PWM 출력
 
     // 다음 미분항 계산을 위해 오차를 저장해둔다.
@@ -202,8 +206,7 @@ static void motor_control_handler(void) {
 }
 
 void motor_control_start(const motor_target_updater_t updater) {
-    motor_pwm_enabled(MOTOR_LEFT, true);
-    motor_pwm_enabled(MOTOR_RIGHT, true);
+    motor_pwm_enabled(true);
 
     for (int i = 0; i < MOTOR_COUNT; i++) {
         struct motor_control_state_t *const state = &control_state[i];
@@ -221,9 +224,7 @@ void motor_control_start(const motor_target_updater_t updater) {
 
 void motor_control_stop(void) {
     timer_periodic_stop(MOTOR_CONTROL_TIMER_SLOT);
-
-    motor_pwm_enabled(MOTOR_LEFT, false);
-    motor_pwm_enabled(MOTOR_RIGHT, false);
+    motor_pwm_enabled(false);
 }
 
 void motor_init(void) {

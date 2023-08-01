@@ -12,7 +12,6 @@
 #include "hardware/gpio.h"
 
 #include "switch.h"
-#include "config.h"
 
 enum switch_index {
     SWITCH_L = 0,

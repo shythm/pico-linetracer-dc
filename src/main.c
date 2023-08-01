@@ -1,38 +1,32 @@
 #include <stdio.h>
+#include <string.h>
 #include "pico/stdlib.h"
 
-#include "switch.h"
-#include "sensing.h"
-#include "timer.h"
+#include "drive.h"
+#include "fs.h"
+#include "mark.h"
 #include "motor.h"
 #include "oled.h"
-#include "drive.h"
+#include "sensing.h"
+#include "switch.h"
+#include "timer.h"
 
-#include "hardware/clocks.h"
+#define UPDATE_PARAMETER(sw, param, delta) \
+    if (sw == SWITCH_EVENT_BOTH)           \
+        break;                             \
+    else if (sw == SWITCH_EVENT_LEFT)      \
+        (param) -= (delta);                \
+    else if (sw == SWITCH_EVENT_RIGHT)     \
+        (param) += (delta);
 
-#define MENU_NUM 9
-
-void calibrate(void);
-void cal_test(void);
-void state_test(void);
-void set_threshold(void);
-void position_test(void);
-
-void motor_pwm_test(void) {
+void test_motor_pwm(void) {
     float duty_ratio = 0;
 
-    motor_pwm_enabled(MOTOR_LEFT, true);
-    motor_pwm_enabled(MOTOR_RIGHT, true);
-
+    oled_clear();
+    motor_pwm_enabled(true);
     for (;;) {
         uint sw = switch_read();
-
-        if (sw == SWITCH_EVENT_LEFT)
-            duty_ratio -= 0.1f;
-        else if (sw == SWITCH_EVENT_RIGHT)
-            duty_ratio += 0.1f;
-        else if (sw == SWITCH_EVENT_BOTH)
-            break;
+        UPDATE_PARAMETER(sw, duty_ratio, 0.1f);
 
         motor_set_pwm_duty_ratio(MOTOR_LEFT, duty_ratio);
         motor_set_pwm_duty_ratio(MOTOR_RIGHT, duty_ratio);
@@ -40,200 +34,226 @@ void motor_pwm_test(void) {
         oled_printf("/0PWM Test");
         oled_printf("/1duty ratio/2%1.2f", duty_ratio);
     }
-
-    motor_pwm_enabled(MOTOR_LEFT, false);
-    motor_pwm_enabled(MOTOR_RIGHT, false);
+    motor_pwm_enabled(false);
 }
 
-int32_t position_left = 0;
-int32_t position_right = 0;
+static int32_t _position_left = 0;
+static int32_t _position_right = 0;
 
-void motor_position_commander(int32_t *const left, int32_t *const right) {
-    *left = position_left;
-    *right = position_right;
+void _position_commander(int32_t *const left, int32_t *const right) {
+    *left = _position_left;
+    *right = _position_right;
 }
 
-void motor_position_test(void) {
-    position_left = motor_get_encoder_value(MOTOR_LEFT);
-    position_right = motor_get_encoder_value(MOTOR_RIGHT);
+void test_motor_control(void) {
+    _position_left = motor_get_encoder_value(MOTOR_LEFT);
+    _position_right = motor_get_encoder_value(MOTOR_RIGHT);
 
-    motor_control_start(motor_position_commander);
-
+    oled_clear();
+    sensing_start();
+    motor_control_start(_position_commander);
     for (;;) {
         uint sw = switch_read();
 
         if (sw == SWITCH_EVENT_LEFT)
-            position_left += 50;
+            _position_left += 50;
         else if (sw == SWITCH_EVENT_RIGHT)
-            position_right += 50;
+            _position_right += 50;
         else if (sw == SWITCH_EVENT_BOTH)
             break;
 
-        oled_printf("/0m_pos_test");
-        oled_printf("/1pos_left/2%10d", position_left);
-        oled_printf("/3pos_right/4%10d", position_right);
+        oled_printf("/0Motor Ctrl Test");
+        oled_printf("/1position left /2%10d", _position_left);
+        oled_printf("/3position right/4%10d", _position_right);
     }
-
     motor_control_stop();
+    sensing_stop();
 }
 
-void (*menu_fp[MENU_NUM])(void) = {
-    motor_position_test,
-    motor_pwm_test,
-    calibrate,
-    cal_test,
-    set_threshold,
-    state_test,
-    position_test,
-    mark_test,
-    drive_first,
-};
+static void _display_ir(volatile const int *const arr) {
+#define SEL(X, IDX) ((uint8_t)((*((X) + (IDX))) & 0xFF))
+    oled_printf("/0/g 4 5 6 7 8 9 A B");
+    oled_printf("/1%02x%02x%02x%02x%02x%02x%02x%02x",
+                SEL(arr, 0x4), SEL(arr, 0x5), SEL(arr, 0x6), SEL(arr, 0x7),
+                SEL(arr, 0x8), SEL(arr, 0x9), SEL(arr, 0xA), SEL(arr, 0xB));
+    oled_printf("/2/g3 /w%02x        %02x/g C", SEL(arr, 0x3), SEL(arr, 0xC));
+    oled_printf("/3/g2 /w%02x        %02x/g D", SEL(arr, 0x2), SEL(arr, 0xD));
+    oled_printf("/4/g1 /w%02x        %02x/g E", SEL(arr, 0x1), SEL(arr, 0xE));
+    oled_printf("/5/g0 /w%02x        %02x/g F", SEL(arr, 0x0), SEL(arr, 0xF));
+#undef SEL
+}
 
-char menu_name[MENU_NUM][16] = {
-    "MotorPosTest",
-    "PWM Test",
-    "Calibration",
-    "Calib Test",
-    "Set Thresh",
-    "State Test",
-    "Pos Test",
-    "Mark Test",
-    "First Drive",
-};
+void test_ir_normalized(void) {
+    sensing_start();
+    oled_clear();
+    while (!switch_read()) {
+        _display_ir(sensing_ir_normalized);
+    }
+    sensing_stop();
+}
 
-void menu_select(void) {
-    uint menu_index = 0;
+void test_ir_state(void) {
+    enum switch_event_t sw;
+    char state_str[17] = "0000000000000000";
 
+    sensing_start();
+    oled_clear();
     for (;;) {
-        uint sw = switch_read();
+        for (int i = 0; i < SENSING_IR_COUNT; i++) {
+            state_str[i] = (sensing_ir_state & (0x8000 >> i)) ? '1' : '0';
+        }
+        oled_printf("/0%s", state_str);
+        oled_printf("/1threshold: %1.2f", sensing_ir_threshold);
 
-        oled_printf("/0   -MENU-   ");
-        oled_printf("/1%s", menu_name[menu_index]);
+        sw = switch_read();
+        UPDATE_PARAMETER(sw, sensing_ir_threshold, 0.02f);
+    }
+    sensing_stop();
 
-        if (sw == SWITCH_EVENT_BOTH) {
-            oled_clear();
-            menu_fp[menu_index]();
-            oled_clear();
-        } else if (sw == SWITCH_EVENT_RIGHT) {
-            oled_printf("/1                ");
-            menu_index = (menu_index + 1) % MENU_NUM;
-        } else if (sw == SWITCH_EVENT_LEFT) {
-            oled_printf("/1                ");
-            menu_index = (MENU_NUM + menu_index - 1) % MENU_NUM;
+    // flash 저장
+    oled_clear();
+    oled_printf("/0Do you want/1to /gsave/2/wthreshold?/4(YES // NO)");
+    sw = switch_wait_until_input();
+    if (sw == SWITCH_EVENT_LEFT) {
+        struct fs_data_t *fs = fs_get_data();
+        fs->sensing_ir_threshold = sensing_ir_threshold;
+        fs_flush_data();
+    }
+}
+
+void test_ir_position(void) {
+    sensing_start();
+    oled_clear();
+    while (!switch_read()) {
+        oled_printf("/0position: %6d", sensing_ir_position);
+    }
+    sensing_stop();
+}
+
+static void calibration(void) {
+    enum switch_event_t sw;
+    int temp[SENSING_IR_COUNT] = {
+        0,
+    };
+
+    sensing_start();
+
+    // blackmax 구하기
+    oled_clear();
+    oled_printf("/6    /bblackmax    ");
+    while (!switch_read()) {
+        _display_ir(temp);
+        for (int i = 0; i < SENSING_IR_COUNT; i++) {
+            if (temp[i] < sensing_ir_raw[i]) {
+                temp[i] = sensing_ir_raw[i];
+            }
         }
     }
+
+    // bias(blackmax) 설정
+    for (int i = 0; i < SENSING_IR_COUNT; i++) {
+        sensing_ir_bias[i] = temp[i];
+    }
+
+    // whitemax 구하기
+    oled_clear();
+    oled_printf("/6    /rwhitemax    ");
+    while (!switch_read()) {
+        _display_ir(temp);
+        for (int i = 0; i < SENSING_IR_COUNT; i++) {
+            if (temp[i] < sensing_ir_raw[i]) {
+                temp[i] = sensing_ir_raw[i];
+            }
+        }
+    }
+
+    // range(whitemax - blackmax) 설정
+    for (int i = 0; i < SENSING_IR_COUNT; i++) {
+        sensing_ir_range[i] = temp[i] - sensing_ir_bias[i];
+    }
+
+    sensing_stop();
+
+    // 정규화 테스트
+    oled_clear();
+    oled_printf("/0Do you want/1to /gwatch/2/wcalib value?/4(YES // NO)");
+    sw = switch_wait_until_input();
+    if (sw == SWITCH_EVENT_LEFT) {
+        test_ir_normalized();
+    }
+
+    // flash 저장
+    oled_clear();
+    oled_printf("/0Do you want/1to /gsave/2/wcalib value?/4(YES // NO)");
+    sw = switch_wait_until_input();
+    if (sw == SWITCH_EVENT_LEFT) {
+        oled_printf("/6Saving ...");
+        struct fs_data_t *fs = fs_get_data();
+        for (int i = 0; i < SENSING_IR_COUNT; i++) {
+            fs->sensing_ir_bias[i] = sensing_ir_bias[i];
+            fs->sensing_ir_range[i] = sensing_ir_range[i];
+        }
+        fs_flush_data();
+    }
 }
+
+void do_format_flash(void) {
+    oled_clear();
+
+    oled_printf("/0Do you /rreally/1/wwant to /rformat/2/wthe flash?/3(YES // NO)");
+    enum switch_event_t sw = switch_wait_until_input();
+    if (sw == SWITCH_EVENT_LEFT) {
+        bool result = fs_format();
+        oled_printf("/6%s", result ? "/rFailed." : "/gSuccess!");
+        switch_wait_until_input();
+    }
+}
+
+static const struct menu_t {
+    char *name;
+    void (*func)(void);
+} menu[] = {
+    { "Calibration", calibration },
+    { "IR Sensor Test", test_ir_normalized },
+    { "IR State Test", test_ir_state },
+    { "IR Position Test", test_ir_position },
+    { "Mark Live Test", mark_live_test },
+    { "Motor PWM Test", test_motor_pwm },
+    { "Motor Pos Test", test_motor_control },
+    { "Flash Format", do_format_flash },
+    { "First Drive", drive_first },
+};
 
 int main(void) {
     stdio_init_all();
+    fs_init();
 
     switch_init();
+    oled_init();
     sensing_init();
     motor_init();
-    oled_init();
-    oled_clear();
 
-    sensing_set_enabled(true); // voltage sensing, ir sensing 수행
-    menu_select();
-    return 0;
-}
+    const uint menu_index_max = sizeof(menu) / sizeof(struct menu_t) - 1;
+    int menu_index = 0;
 
-void calibrate(void) {
-    uint maximum[16] = {
-        0, 0, 0, 0,
-        0, 0, 0, 0,
-        0, 0, 0, 0,
-        0, 0, 0, 0
-    };
-
-    oled_printf("/0 Black Max  ");
     for (;;) {
-        uint sw = switch_read();
+        oled_clear();
+        oled_printf("/0/gMain Menu");
+        oled_printf("/1%s", menu[menu_index].name);
+
+        enum switch_event_t sw = switch_wait_until_input();
         if (sw == SWITCH_EVENT_BOTH)
-            break;
-        for (int i = 0; i < 16; i++) {
-            if (maximum[i] < sensing_get_ir_raw(i))
-                maximum[i] = sensing_get_ir_raw(i);
-        }
-        oled_printf("/1%2x %2x %2x %2x", (uint8_t)maximum[0], (uint8_t)maximum[1], (uint8_t)maximum[2], (uint8_t)maximum[3]);
-        oled_printf("/2%2x %2x %2x %2x", (uint8_t)maximum[4], (uint8_t)maximum[5], (uint8_t)maximum[6], (uint8_t)maximum[7]);
-        oled_printf("/3%2x %2x %2x %2x", (uint8_t)maximum[8], (uint8_t)maximum[9], (uint8_t)maximum[10], (uint8_t)maximum[11]);
-        oled_printf("/4%2x %2x %2x %2x", (uint8_t)maximum[12], (uint8_t)maximum[13], (uint8_t)maximum[14], (uint8_t)maximum[15]);
-    }
-    for (int i = 0; i < 16; i++)
-        sensing_ir_bias[i] = maximum[i];
-
-    oled_clear();
-    oled_printf("/0 White Max  ");
-    for (;;) {
-        uint sw = switch_read();
-        if (sw == SWITCH_EVENT_BOTH)
-            break;
-        for (int i = 0; i < 16; i++) {
-            if (maximum[i] < sensing_get_ir_raw(i))
-                maximum[i] = sensing_get_ir_raw(i);
-        }
-        oled_printf("/1%2x %2x %2x %2x", (uint8_t)maximum[0], (uint8_t)maximum[1], (uint8_t)maximum[2], (uint8_t)maximum[3]);
-        oled_printf("/2%2x %2x %2x %2x", (uint8_t)maximum[4], (uint8_t)maximum[5], (uint8_t)maximum[6], (uint8_t)maximum[7]);
-        oled_printf("/3%2x %2x %2x %2x", (uint8_t)maximum[8], (uint8_t)maximum[9], (uint8_t)maximum[10], (uint8_t)maximum[11]);
-        oled_printf("/4%2x %2x %2x %2x", (uint8_t)maximum[12], (uint8_t)maximum[13], (uint8_t)maximum[14], (uint8_t)maximum[15]);
-    }
-    for (int i = 0; i < 16; i++)
-        sensing_ir_range[i] = maximum[i] - sensing_ir_bias[i];
-}
-
-void cal_test(void) {
-    for (;;) {
-        uint sw = switch_read();
-
-        if (sw == SWITCH_EVENT_BOTH)
-            break;
-
-        oled_printf("/0%2x %2x %2x %2x", (uint8_t)sensing_get_ir_normalized(0), (uint8_t)sensing_get_ir_normalized(1), (uint8_t)sensing_get_ir_normalized(2), (uint8_t)sensing_get_ir_normalized(3));
-        oled_printf("/1%2x %2x %2x %2x", (uint8_t)sensing_get_ir_normalized(4), (uint8_t)sensing_get_ir_normalized(5), (uint8_t)sensing_get_ir_normalized(6), (uint8_t)sensing_get_ir_normalized(7));
-        oled_printf("/2%2x %2x %2x %2x", (uint8_t)sensing_get_ir_normalized(8), (uint8_t)sensing_get_ir_normalized(9), (uint8_t)sensing_get_ir_normalized(10), (uint8_t)sensing_get_ir_normalized(11));
-        oled_printf("/3%2x %2x %2x %2x", (uint8_t)sensing_get_ir_normalized(12), (uint8_t)sensing_get_ir_normalized(13), (uint8_t)sensing_get_ir_normalized(14), (uint8_t)sensing_get_ir_normalized(15));
-    }
-}
-
-void set_threshold(void) {
-    for (;;) {
-        uint sw = switch_read();
-
+            menu[menu_index].func();
         if (sw == SWITCH_EVENT_LEFT)
-            sensing_ir_threshold -= 0.02f;
-        else if (sw == SWITCH_EVENT_RIGHT)
-            sensing_ir_threshold += 0.02f;
-        else if (sw == SWITCH_EVENT_BOTH)
-            break;
+            menu_index--;
+        if (sw == SWITCH_EVENT_RIGHT)
+            menu_index++;
 
-        oled_printf("/0    Set    ");
-        oled_printf("/1 Threshold ");
-        oled_printf("/2    %1.2f", sensing_ir_threshold);
+        if (menu_index < 0)
+            menu_index = menu_index_max;
+        if (menu_index > menu_index_max)
+            menu_index = 0;
     }
-}
 
-void state_test(void) {
-    for (;;) {
-        uint sw = switch_read();
-
-        if (sw == SWITCH_EVENT_BOTH)
-            break;
-
-        oled_printf("/0%1x%1x%1x%1x%1x%1x%1x%1x%1x%1x%1x%1x", ((uint16_t)sensing_get_ir_state() >> 13) & 1, ((uint16_t)sensing_get_ir_state() >> 12) & 1, ((uint16_t)sensing_get_ir_state() >> 11) & 1, ((uint16_t)sensing_get_ir_state() >> 10) & 1, ((uint16_t)sensing_get_ir_state() >> 9) & 1, ((uint16_t)sensing_get_ir_state() >> 8) & 1, ((uint16_t)sensing_get_ir_state() >> 7) & 1, ((uint16_t)sensing_get_ir_state() >> 6) & 1, ((uint16_t)sensing_get_ir_state() >> 5) & 1, ((uint16_t)sensing_get_ir_state() >> 4) & 1, ((uint16_t)sensing_get_ir_state() >> 3) & 1, ((uint16_t)sensing_get_ir_state() >> 2) & 1);
-        oled_printf("/1%1x          %1x", ((uint16_t)sensing_get_ir_state() >> 14) & 1, ((uint16_t)sensing_get_ir_state() >> 1) & 1);
-        oled_printf("/2%1x          %1x", ((uint16_t)sensing_get_ir_state() >> 15) & 1, ((uint16_t)sensing_get_ir_state() >> 0) & 1);
-    }
-}
-
-void position_test(void) {
-    for (;;) {
-        uint sw = switch_read();
-
-        if (sw == SWITCH_EVENT_BOTH)
-            break;
-
-        oled_printf("/0  Pos Test  ");
-        oled_printf("/1   %5d   ", sensing_get_position());
-    }
+    return 0;
 }

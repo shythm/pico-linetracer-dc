@@ -5,7 +5,8 @@
 #ifndef _SWITCH_H_
 #define _SWITCH_H_
 
-#include "pico/types.h"
+#include "pico.h"
+#include "config.h"
 
 enum switch_event_t {
     SWITCH_EVENT_NONE = 0x00, // 아무 스위치도 눌리지 않았을 때
@@ -25,5 +26,20 @@ void switch_init(void);
  * @return switch_event_t 스위치의 눌림 이벤트
  */
 enum switch_event_t switch_read(void);
+
+/**
+ * @brief 스위치에 입력이 들어올 때까지 기다리는 함수.
+ *
+ * @return enum switch_event_t 스위치의 눌림 이벤트
+ */
+inline static enum switch_event_t switch_wait_until_input(void) {
+    enum switch_event_t sw;
+
+    while (!(sw = switch_read())) {
+        tight_loop_contents();
+    }
+
+    return sw;
+}
 
 #endif

@@ -2,6 +2,7 @@
 #define _OLED_H_
 
 #include "pico/types.h"
+#include "config.h"
 
 /**
  * @brief OLED 화면을 모두 검은색으로 채우는 함수.

@@ -46,7 +46,6 @@
 #include "hardware/spi.h"
 
 #include "oled.h"
-#include "config.h"
 
 #include "starfont.h"
 #define FONT        STARFONT_ASCII
@@ -175,7 +174,7 @@ void oled_clear(void) {
 
     oled_set_address(0, 0, OLED_WIDTH - 1, OLED_HEIGHT - 1);
     for (int i = 0; i < OLED_HEIGHT * OLED_WIDTH; i++) {
-        oled_write_data(&data, sizeof(data));
+        oled_write_data(&data, 1);
     }
 }
 
@@ -200,14 +199,11 @@ void oled_init(void) {
     // https://github.com/adafruit/Adafruit-SSD1331-OLED-Driver-Library-for-Arduino
     const uint8_t init_cmd[] = {
         OLED_CMD_DISPLAYOFF,
-        OLED_CMD_SETREMAP, 0x73, // 1b, Vertical address increment
-                                 // 1b, RAM Column 0 to 95 maps to Pin Seg (SA,SB,SC) 95 to 0
-                                 // 0b, normal order SA,SB,SC (e.g. RGB)
-                                 // 0b, Disable left-right swapping on COM
-                                 // 1b, Scan from COM [N-1] to COM0. Where N is the multiplex ratio.
-                                 // 1b, Enable COM Split Odd Even
-                                 // 1b,
-                                 // 0b, 65k color format
+        /*
+         * 0x72 = 0b01110010 -> Horizontal address increment
+         * 0x73 = 0b01110011 -> Vertical address increment (이 모드를 사용, 제공된 폰트가 위에서 아래로 읽는 형태이기 때문)
+         */
+        OLED_CMD_SETREMAP, 0x73,
         OLED_CMD_STARTLINE, 0x00,
         OLED_CMD_DISPLAYOFFSET, 0x00,
         OLED_CMD_NORMALDISPLAY,

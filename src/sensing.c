@@ -1,27 +1,10 @@
-#include "sensing.h"
-
 #include "hardware/gpio.h"
 #include "hardware/adc.h"
 #include "hardware/sync.h"
 
+#include "sensing.h"
 #include "timer.h"
-
-#define SENSING_VOLTAGE_GPIO 26
-
-#define SENSING_IR_MUX_SEL0_GPIO 6
-#define SENSING_IR_MUX_SEL1_GPIO 7
-#define SENSING_IR_MUX_SEL2_GPIO 8
-#define SENSING_IR_IN_MUXA_GPIO  27
-#define SENSING_IR_IN_MUXB_GPIO  28
-#define SENSING_IR_OUT_MUX_GPIO  9
-
-#ifndef MAX
-#define MAX(a, b) (((a) > (b)) ? (a) : (b))
-#endif
-
-#ifndef MIN
-#define MIN(a, b) (((a) < (b)) ? (a) : (b))
-#endif
+#include "fs.h"
 
 void sensing_init(void) {
     // ADC Block 초기화
@@ -29,21 +12,29 @@ void sensing_init(void) {
 
     // 전압 측정, IR 수광 센서 측정을 위해 해당 GPIO를 ADC 기능으로 초기화
     adc_gpio_init(SENSING_VOLTAGE_GPIO);
-    adc_gpio_init(SENSING_IR_IN_MUXA_GPIO);
-    adc_gpio_init(SENSING_IR_IN_MUXB_GPIO);
+    adc_gpio_init(SENSING_IR_MUX_GPIO_IN_A);
+    adc_gpio_init(SENSING_IR_MUX_GPIO_IN_B);
 
     // IR 센서부 GPIO 초기화
-    gpio_init(SENSING_IR_MUX_SEL0_GPIO);
-    gpio_set_dir(SENSING_IR_MUX_SEL0_GPIO, GPIO_OUT);
-    gpio_init(SENSING_IR_MUX_SEL1_GPIO);
-    gpio_set_dir(SENSING_IR_MUX_SEL1_GPIO, GPIO_OUT);
-    gpio_init(SENSING_IR_MUX_SEL2_GPIO);
-    gpio_set_dir(SENSING_IR_MUX_SEL2_GPIO, GPIO_OUT);
-    gpio_init(SENSING_IR_OUT_MUX_GPIO);
-    gpio_set_dir(SENSING_IR_OUT_MUX_GPIO, GPIO_OUT);
-}
+    gpio_init(SENSING_IR_MUX_GPIO_SEL0);
+    gpio_set_dir(SENSING_IR_MUX_GPIO_SEL0, GPIO_OUT);
+    gpio_init(SENSING_IR_MUX_GPIO_SEL1);
+    gpio_set_dir(SENSING_IR_MUX_GPIO_SEL1, GPIO_OUT);
+    gpio_init(SENSING_IR_MUX_GPIO_SEL2);
+    gpio_set_dir(SENSING_IR_MUX_GPIO_SEL2, GPIO_OUT);
+    gpio_init(SENSING_IR_MUX_GPIO_OUT);
+    gpio_set_dir(SENSING_IR_MUX_GPIO_OUT, GPIO_OUT);
 
-#define GET_ADC_CHANNEL(GPIO_PIN) ((GPIO_PIN) - (26))
+#if FLASH_LOAD_DEFAULT
+    struct fs_data_t *fs = fs_get_data();
+    sensing_ir_threshold = fs->sensing_ir_threshold;
+
+    for (int i = 0; i < SENSING_IR_COUNT; i++) {
+        sensing_ir_bias[i] = fs->sensing_ir_bias[i];
+        sensing_ir_range[i] = fs->sensing_ir_range[i];
+    }
+#endif
+}
 
 /**
  * @brief Raspberry Pi Pico에 존재하는 총 3개의 ADC 채널에 대해 아날로그 디지털 변환을 실시한다.
@@ -51,7 +42,7 @@ void sensing_init(void) {
  * @param channel 0(GPIO 26), 1(GPIO 27), 2(GPIO 28) 중 하나의 값
  * @return 해당 채널에서 아날로그-디지털 변환한 데이터
  */
-static uint get_adc_data(uint channel) {
+static uint sensing_get_adc_data(uint channel) {
     uint data[3];
     uint status;
 
@@ -111,20 +102,28 @@ static uint get_adc_data(uint channel) {
     return data[1];
 }
 
-volatile float _sensing_voltage;
+#define GET_ADC_CHANNEL(GPIO_PIN) ((GPIO_PIN) - (26))
 
-/**
- * @brief ADC로부터 얻은 데이터를 실제 전압으로 바꿔주는 계산식
- */
-#define SENSING_EXPR_RAW_TO_VOLTAGE(X) ((3.3f / 4096.0f * 21.0f / 1.0f) * (X))
+volatile float sensing_supply_voltage;
 
 /**
  * @brief 전압 센싱을 한 후 실제 전압으로 바꾸어 전역 변수에 저장(갱신)한다.
  */
-static inline void update_voltage(void) {
-    _sensing_voltage = SENSING_EXPR_RAW_TO_VOLTAGE(
-        get_adc_data(GET_ADC_CHANNEL(SENSING_VOLTAGE_GPIO)));
+static inline void sensing_update_voltage(void) {
+    sensing_supply_voltage = SENSING_EXPR_RAW_TO_VOLTAGE(
+        sensing_get_adc_data(GET_ADC_CHANNEL(SENSING_VOLTAGE_GPIO)));
 }
+
+volatile int sensing_ir_bias[SENSING_IR_COUNT];
+volatile int sensing_ir_range[SENSING_IR_COUNT] = {
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, //
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, //
+};
+volatile int sensing_ir_raw[SENSING_IR_COUNT];
+volatile int sensing_ir_normalized[SENSING_IR_COUNT];
+volatile float sensing_ir_threshold = SENSING_IR_THRESHOLD_DEFAULT;
+volatile sensing_ir_state_t sensing_ir_state;
+volatile int sensing_ir_position;
 
 /**
  * @brief IR 센서가 받아들일 수 있는 최소의 값과 범위를 통해 IR 센서의 값을 0에서 255 사이의 값으로 정규화합니다.
@@ -134,7 +133,7 @@ static inline void update_voltage(void) {
  * @param range IR 센서의 범위(whitemax - blackmax)
  * @return 정규화된 값
  */
-static inline int normalize_ir(int raw, int bias, int range) {
+static inline int sensing_normalize_ir(int raw, int bias, int range) {
     int norm = 0xff * (raw - bias) / range;
     norm = MIN(norm, 0xff);
     norm = MAX(norm, 0x00);
@@ -148,12 +147,11 @@ static inline int normalize_ir(int raw, int bias, int range) {
  *
  * @return 현재 라인이 감지되는 위치
  */
-static inline int calculate_position(void) {
+static inline int sensing_calc_position(void) {
     static const int weight[SENSING_IR_COUNT] = {
         -30000, -26000, -22000, -18000, -14000, -10000, -6000, -2000, //
         2000, 6000, 10000, 14000, 18000, 22000, 26000, 30000, //
     };
-
     static int position = 0;
 
     /**
@@ -176,32 +174,21 @@ static inline int calculate_position(void) {
      * 이에 반해 오른쪽에 라인이 위치하면 position 값은 양수가 되고 갈 수록 커질 것이다.
      */
     for (int i = window_start; i <= window_end; i++) {
-        position += sensing_get_ir_normalized(i) * weight[i];
-        sum += sensing_get_ir_normalized(i);
+        position += sensing_ir_normalized[i] * weight[i];
+        sum += sensing_ir_normalized[i];
     }
 
     position /= sum;
     return position;
 }
 
-volatile int _sensing_ir_raw[SENSING_IR_COUNT];
-volatile int sensing_ir_bias[SENSING_IR_COUNT];
-volatile int sensing_ir_range[SENSING_IR_COUNT] = {
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, //
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, //
-};
-volatile int _sensing_ir_normalized[SENSING_IR_COUNT];
-volatile float sensing_ir_threshold = 0.2f;
-volatile sensing_ir_state_t _sensing_ir_state;
-volatile int _sensing_position;
-
 /**
  * @brief IR 센서 데이터를 ADC 과정을 통해 구하고, 적절하게 가공한다.
  */
-static inline void update_ir(void) {
-    static const uint sel0 = (1 << SENSING_IR_MUX_SEL0_GPIO),
-                      sel1 = (1 << SENSING_IR_MUX_SEL1_GPIO),
-                      sel2 = (1 << SENSING_IR_MUX_SEL2_GPIO);
+static inline void sensing_update_ir(void) {
+    static const uint sel0 = (1 << SENSING_IR_MUX_GPIO_SEL0),
+                      sel1 = (1 << SENSING_IR_MUX_GPIO_SEL1),
+                      sel2 = (1 << SENSING_IR_MUX_GPIO_SEL2);
 
     static const uint ir_order[8] = {
         sel2 | sel1 | sel0, // 111
@@ -221,27 +208,29 @@ static inline void update_ir(void) {
     gpio_clr_mask(ir_mask);
     gpio_set_mask(ir_order[i]);
 
-    gpio_put(SENSING_IR_OUT_MUX_GPIO, 1); // IR 발광센서 켜기
+    gpio_put(SENSING_IR_MUX_GPIO_OUT, 1); // IR 발광센서 켜기
     // 두 개의 MUX로부터 ADC 값을 가져옴
-    int raw_l = get_adc_data(GET_ADC_CHANNEL(SENSING_IR_IN_MUXA_GPIO)) >> 4;
-    int raw_r = get_adc_data(GET_ADC_CHANNEL(SENSING_IR_IN_MUXB_GPIO)) >> 4;
-    gpio_put(SENSING_IR_OUT_MUX_GPIO, 0); // IR 발광센서 끄기
+    int raw_l = sensing_get_adc_data(GET_ADC_CHANNEL(SENSING_IR_MUX_GPIO_IN_A)) >> 4;
+    int raw_r = sensing_get_adc_data(GET_ADC_CHANNEL(SENSING_IR_MUX_GPIO_IN_B)) >> 4;
+    gpio_put(SENSING_IR_MUX_GPIO_OUT, 0); // IR 발광센서 끄기
 
     // raw
-    _sensing_ir_raw[i] = raw_l;
-    _sensing_ir_raw[i + 8] = raw_r;
+    sensing_ir_raw[i] = raw_l;
+    sensing_ir_raw[i + 8] = raw_r;
 
     // normalization
-    _sensing_ir_normalized[i] = normalize_ir(sensing_get_ir_raw(i), sensing_ir_bias[i], sensing_ir_range[i]);
-    _sensing_ir_normalized[i + 8] = normalize_ir(sensing_get_ir_raw(i + 8), sensing_ir_bias[i + 8], sensing_ir_range[i + 8]);
+    sensing_ir_normalized[i] = sensing_normalize_ir(
+        sensing_ir_raw[i], sensing_ir_bias[i], sensing_ir_range[i]);
+    sensing_ir_normalized[i + 8] = sensing_normalize_ir(
+        sensing_ir_raw[i + 8], sensing_ir_bias[i + 8], sensing_ir_range[i + 8]);
 
     // state
-    _sensing_ir_state &= ~((1 << (0x7 - i)) | (1 << (0xf - i)));
-    _sensing_ir_state |= (sensing_get_ir_normalized(i) > (sensing_ir_threshold * 0xff)) << (0xf - i);
-    _sensing_ir_state |= (sensing_get_ir_normalized(i + 8) > (sensing_ir_threshold * 0xff)) << (0x7 - i);
+    sensing_ir_state &= ~((1 << (0x7 - i)) | (1 << (0xf - i)));
+    sensing_ir_state |= (sensing_ir_normalized[i] > (sensing_ir_threshold * 0xff)) << (0xf - i);
+    sensing_ir_state |= (sensing_ir_normalized[i + 8] > (sensing_ir_threshold * 0xff)) << (0x7 - i);
 
     // position
-    _sensing_position = calculate_position();
+    sensing_ir_position = sensing_calc_position();
 
     i = (i + 1) & 0x07;
 }
@@ -249,18 +238,15 @@ static inline void update_ir(void) {
 /**
  * @brief `sensing.c` 전용 타이머 IRQ 핸들러
  */
-static void timer_irq_handler(void) {
-    update_voltage();
-    update_ir();
+static void sensing_handler(void) {
+    sensing_update_voltage();
+    sensing_update_ir();
 }
 
-#define SENSING_TIMER_SLOT        TIMER_SLOT_0
-#define SENSING_TIMER_INTERVAL_US 500
+void sensing_start(void) {
+    timer_periodic_start(SENSING_TIMER_SLOT, SENSING_TIMER_INTERVAL_US, sensing_handler);
+}
 
-void sensing_set_enabled(bool enabled) {
-    if (enabled) {
-        timer_periodic_start(SENSING_TIMER_SLOT, SENSING_TIMER_INTERVAL_US, timer_irq_handler);
-    } else {
-        timer_periodic_stop(SENSING_TIMER_SLOT);
-    }
+void sensing_stop(void) {
+    timer_periodic_stop(SENSING_TIMER_SLOT);
 }
