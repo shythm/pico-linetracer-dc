@@ -178,7 +178,11 @@ static inline int sensing_calc_position(void) {
         sum += sensing_ir_normalized[i];
     }
 
-    position /= sum;
+    if (sum == 0) {
+        position = 0;
+    } else {
+        position /= sum;
+    }
     return position;
 }
 
