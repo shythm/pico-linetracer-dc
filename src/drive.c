@@ -72,7 +72,7 @@ volatile static float v_target = 0.0f; // 목표 속도: 가감속도 제어의 
 volatile static float accel = 4.0f; // 가속도
 volatile static float decel = 6.0f; // 감속도
 volatile static int curve_decel = 24000; // 커브 감속 (작을 수록 곡선에서 감속을 많이 한다)
-volatile static float curve_coef = 0.00007f; // 곡률 계수
+volatile static float curve_coef = 0.00008f; // 곡률 계수
 
 /**
  * @brief 모터 제어 시 호출되는 함수를 정의한다. 모터 제어를 시작할 때 이 함수를 전달한다.
@@ -160,11 +160,13 @@ static void drive_stop(bool force) {
  * @brief 1차 주행
  */
 void drive_first(void) {
-    float v_default = 2.0f;
+    static float v_default = 2.8f;
+    static float fit_in = 0.2f;
 
     DRIVE_SET_PARAMETER(v_default, "default velocity", "%1.2f", 0.1f);
     DRIVE_SET_PARAMETER(curve_coef, "curvature coefficient", "%1.6f", 0.00001f);
     DRIVE_SET_PARAMETER(curve_decel, "curve deceleration", "%5d", 1000);
+    DRIVE_SET_PARAMETER(fit_in, "fit in", "%1.2f", 0.01);
 
     enum mark_t detected_mark[DRIVE_MARK_COUNT_MAX];
     uint detected_mark_count = 0;
@@ -184,6 +186,7 @@ void drive_first(void) {
     while (!drive_check_line_out(&line_out_state)) {
 
         drive_buzzer_update();
+        mark_update_window(&mark_state, sensing_ir_position);
         enum mark_t mark = mark_update_state(&mark_state);
 
         if (mark) {
@@ -202,7 +205,7 @@ void drive_first(void) {
         }
 
         if (mark_end_count == 2) {
-            decel = powf(v_command, 2) / (2.0f * 0.25f);
+            decel = powf(v_command, 2) / (2.0f * fit_in);
             drive_stop(false);
             break;
         }
