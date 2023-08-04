@@ -2,6 +2,7 @@
 #include <math.h>
 #include "pico.h"
 #include "hardware/timer.h"
+#include "hardware/gpio.h"
 
 #include "drive.h"
 #include "oled.h"
@@ -10,6 +11,24 @@
 #include "motor.h"
 #include "mark.h"
 #include "fs.h"
+
+static uint32_t buzzer_timer = 0;
+
+static void drive_buzzer_init(void) {
+    gpio_init(DRIVE_BUZZER_GPIO);
+    gpio_set_dir(DRIVE_BUZZER_GPIO, GPIO_OUT);
+    gpio_pull_down(DRIVE_BUZZER_GPIO);
+
+    gpio_put(DRIVE_BUZZER_GPIO, false);
+}
+
+static inline void drive_buzzer_update() {
+    gpio_put(DRIVE_BUZZER_GPIO, time_us_32() < buzzer_timer);
+}
+
+static inline void drive_buzzer_out(uint32_t time_ms) {
+    buzzer_timer = time_us_32() + (time_ms * 1000);
+}
 
 static inline bool _is_on_line(void) {
     return __builtin_popcount(sensing_ir_state & MARK_MASK_ALL);
@@ -156,6 +175,7 @@ void drive_first(void) {
     uint line_out_state = DRIVE_LINE_OUT_STATE_IDLE;
     uint mark_end_count = 0;
 
+    drive_buzzer_init();
     oled_clear();
     sensing_start();
     drive_start();
@@ -163,14 +183,17 @@ void drive_first(void) {
     v_target = v_default;
     while (!drive_check_line_out(&line_out_state)) {
 
+        drive_buzzer_update();
         enum mark_t mark = mark_update_state(&mark_state);
 
         if (mark) {
-            if (mark != MARK_CROSS) { // 크로스 마크는 무시
-                detected_mark[detected_mark_count] = mark; // 마크 기록
-                detected_tick[detected_mark_count] // 엔코더 값 기록
-                    = (motor_get_encoder_value(MOTOR_LEFT) + motor_get_encoder_value(MOTOR_RIGHT)) / 2;
-                detected_mark_count++;
+            detected_mark[detected_mark_count] = mark; // 마크 기록
+            detected_tick[detected_mark_count] // 엔코더 값 기록
+                = (motor_get_encoder_value(MOTOR_LEFT) + motor_get_encoder_value(MOTOR_RIGHT)) / 2;
+            detected_mark_count++;
+
+            if (mark != MARK_CROSS) {
+                drive_buzzer_out(80);
             }
 
             if (mark == MARK_BOTH) { // 엔드 마크 증가
@@ -195,15 +218,17 @@ void drive_first(void) {
     }
 
     // 마크 개수 확인
-    uint left_count = 0, right_count = 0;
+    uint left_count = 0, right_count = 0, cross_count = 0;
     for (int i = 0; i < detected_mark_count; i++) {
         if (detected_mark[i] == MARK_LEFT) {
             left_count++;
         } else if (detected_mark[i] == MARK_RIGHT) {
             right_count++;
+        } else if (detected_mark[i] == MARK_CROSS) {
+            cross_count++;
         }
     }
-    oled_printf("/2L: %3u, R: %3u", left_count, right_count);
+    oled_printf("/2/rL/w%3u /bR/w%3u /gC/w%3u", left_count, right_count, cross_count);
 
     // 마크 플래시 저장
     oled_printf("/3Do you want/4to /gsave/w mark?/5 (YES // NO)");

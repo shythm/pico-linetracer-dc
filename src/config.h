@@ -105,6 +105,7 @@
 
 #define DRIVE_MARK_COUNT_MAX   (400)
 #define DRIVE_LINE_OUT_TIME_US ((200) * (1000))
+#define DRIVE_BUZZER_GPIO      (22)
 
 /* DRIVE END */
 
