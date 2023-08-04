@@ -34,6 +34,8 @@ struct mark_state_t {
  */
 struct mark_state_t mark_init_state(sensing_ir_state_t left, sensing_ir_state_t right);
 
+void mark_update_window(struct mark_state_t *const state, const float position);
+
 /**
  * @brief 마크를 판단하는 state machine을 수행한다.
  * 마크가 결정되지 않으면 MARK_NONE이, 마크가 결정되면 그에 따른 마크의 종류를 반환한다.
