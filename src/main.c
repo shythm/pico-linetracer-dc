@@ -209,6 +209,16 @@ void do_format_flash(void) {
     }
 }
 
+void test_buzzer(void) {
+    gpio_init(DRIVE_BUZZER_GPIO);
+    gpio_set_dir(DRIVE_BUZZER_GPIO, GPIO_OUT);
+    gpio_pull_down(DRIVE_BUZZER_GPIO);
+
+    gpio_put(DRIVE_BUZZER_GPIO, true);
+    switch_wait_until_input();
+    gpio_put(DRIVE_BUZZER_GPIO, false);
+}
+
 static const struct menu_t {
     char *name;
     void (*func)(void);
@@ -221,6 +231,7 @@ static const struct menu_t {
     { "Motor PWM Test", test_motor_pwm },
     { "Motor Pos Test", test_motor_control },
     { "Flash Format", do_format_flash },
+    { "Buzzer Test", test_buzzer },
     { "First Drive", drive_first },
 };
 
