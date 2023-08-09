@@ -1,14 +1,15 @@
+#include <stdlib.h>
 #include <string.h>
 
 #include "mark.h"
 #include "switch.h"
 #include "oled.h"
 #include "sensing.h"
+#include "motor.h"
 
-#define MARK_STATE_IDLE     0x01
-#define MARK_STATE_CROSS    0x02
-#define MARK_STATE_MARKER   0x04
-#define MARK_STATE_DECISION 0x08
+#define MARK_STATE_READY        0x01
+#define MARK_STATE_ACCUMULATION 0x02
+#define MARK_STATE_DECISION     0x04
 
 static const sensing_ir_state_t MARK_STATE_LEFT[SENSING_IR_COUNT] = {
     0x0000, 0x0000, 0x0000, 0x0000, 0x8000, 0xC000, 0xE000, 0xF000, //
@@ -30,10 +31,10 @@ static const sensing_ir_state_t MARK_STATE_CENTER[SENSING_IR_COUNT] = {
     0x07F8, 0x03FC, 0x01FE, 0x00FF, 0x007F, 0x003F, 0x001F, 0x000F, //
 };
 
-struct mark_state_t mark_init_state(sensing_ir_state_t left, sensing_ir_state_t right) {
+struct mark_state_t mark_init_state(void) {
     struct mark_state_t ret;
 
-    ret.state = MARK_STATE_IDLE;
+    ret.state = MARK_STATE_READY;
     ret.left = MARK_STATE_LEFT[7];
     ret.right = MARK_STATE_RIGHT[7];
     ret.both = ret.left | ret.right;
@@ -51,55 +52,62 @@ void mark_update_window(struct mark_state_t *const state, const float position) 
     state->center = MARK_STATE_CENTER[where];
 }
 
-enum mark_t mark_update_state(struct mark_state_t *mark_state) {
-    static sensing_ir_state_t accumulate;
+enum mark_t mark_update_state(struct mark_state_t *state) {
     const sensing_ir_state_t ir_state = sensing_ir_state;
+    bool is_any = ir_state & state->both;
+    bool is_line_6 = __builtin_popcount(ir_state & state->center) >= 6;
 
-    accumulate |= ir_state; // 마크 판단을 위해 센서 상태를 누적한다
+    switch (state->state) {
+    case MARK_STATE_READY: // 일반 주행 중일 때
 
-    bool is_any = ir_state & mark_state->both;
-
-    switch (mark_state->state) {
-    case MARK_STATE_IDLE: // 일반 주행 중일 때
-        accumulate = 0;
-
-        if (__builtin_popcount(mark_state->center & ir_state) >= 6) {
-            mark_state->state = MARK_STATE_CROSS;
-        } else if (is_any) {
-            mark_state->state = MARK_STATE_MARKER;
-        }
-        break;
-
-    case MARK_STATE_CROSS: // 라인 교차 구간을 지나는 중일 때
-        /**
-         * accumulate를 검사하는 이유?
-         *  -> 모든 센서들이 인식됐음은 곧 크로스 구간을 지나기 직전임을 의미한다.
-         * is_any를 검사하는 이유?
-         *  -> 처리 속도가 너무 빠른 나머지 뒤로 나와있는 센서들이 아직 크로스 위에 있을 수 있으므로 이 조건까지 검사한다.
+        /*
+         * 마커 센서가 어느 하나라도 잡혔다 -> 왼쪽, 오른쪽, 크로스, 엔드 가능성
+         * 라인 센서가 많이 잡혔다 -> 크로스 가능성, 곡선 구간이어서 라인 센서가 많이 잡힐 수 있음
          */
-        if ((accumulate == MARK_MASK_ALL) && (!is_any)) {
-            mark_state->state = MARK_STATE_DECISION;
+        if (is_any || is_line_6) {
+            state->state = MARK_STATE_ACCUMULATION;
+            state->accumulate = ir_state;
+            state->motor = ir_state & state->left ? MOTOR_LEFT : MOTOR_RIGHT;
+            state->encoder = abs(motor_get_encoder_value(state->motor)) + MARK_LENGTH_TICK;
         }
         break;
 
-    case MARK_STATE_MARKER: // 마커 인식 중일 때
-        if (__builtin_popcount(mark_state->center & accumulate) >= 6) {
-            mark_state->state = MARK_STATE_CROSS;
-            break;
-        }
-        if (!is_any) {
-            mark_state->state = MARK_STATE_DECISION;
+    case MARK_STATE_ACCUMULATION:
+
+        state->accumulate |= ir_state; // 마크 판단을 위해 센서 상태를 누적한다.
+
+        /*
+         * 트레이서가 마크의 길이(약 2cm)를 지난 후에 상태 전이를 결정한다.
+         * -> 트레이서가 뜨거나 노이즈로 인해 마크를 잠시 동안 못 볼 수 있는 경우를 방지한다.
+         */
+        if (state->encoder < abs(motor_get_encoder_value(state->motor))) {
+
+            /*
+             * 트레이서가 마크를 지난 것 같음에도 불구하고 마크가 잡힌다면,
+             * 아직 완전히 그 구간을 지나지 않은 것으로 판단하여, 다시 누적 상태로 돌아간다. (또 마크의 길이 만큼 더 누적할 것)
+             *
+             * 다만, 이 순간에도 트레이서가 뜨거나 노이즈로 인해 마크가 있음에도 불구하고 못 볼 수 있을 것이다.
+             * 어쩔 수 없는 경우로, 죄우 마크를 매번 검사하는 것 보다는 잘못 볼 확률을 낮출 수 있기에 이 방식을 채택한다.
+             */
+            if (is_any || is_line_6) {
+                state->encoder = abs(motor_get_encoder_value(state->motor)) +
+                                 MARK_LENGTH_TICK / 2;
+            } else {
+                state->state = MARK_STATE_DECISION;
+            }
         }
         break;
 
-    case MARK_STATE_DECISION: // 판단 단계
-        mark_state->state = MARK_STATE_IDLE;
+    case MARK_STATE_DECISION:
 
-        if (accumulate == MARK_MASK_ALL) {
+        state->state = MARK_STATE_READY;
+
+        // if (__builtin_popcount(state->accumulate) >= 12) {
+        if (state->accumulate == 0xFFFF) {
             return MARK_CROSS;
         }
-        bool is_left = accumulate & mark_state->left;
-        bool is_right = accumulate & mark_state->right;
+        bool is_left = state->accumulate & state->left;
+        bool is_right = state->accumulate & state->right;
         if (is_left && is_right) {
             return MARK_BOTH;
         }
@@ -118,8 +126,7 @@ enum mark_t mark_update_state(struct mark_state_t *mark_state) {
 void mark_live_test(void) {
     sensing_start();
 
-    struct mark_state_t mark_state =
-        mark_init_state(MARK_MASK_LEFT_DEFAULT, MARK_MASK_RIGHT_DEFAULT);
+    struct mark_state_t mark_state = mark_init_state();
 
     oled_clear();
     oled_printf("/0Mark Live Test");
@@ -128,14 +135,14 @@ void mark_live_test(void) {
         enum mark_t mark = mark_update_state(&mark_state);
 
         switch (mark_state.state) {
-        case MARK_STATE_IDLE:
-            oled_printf("/0STATE: IDLE     ");
+        case MARK_STATE_READY:
+            oled_printf("/0STATE: READY    ");
             break;
-        case MARK_STATE_CROSS:
-            oled_printf("/0STATE: CROSS    ");
+        case MARK_STATE_ACCUMULATION:
+            oled_printf("/0STATE: ACCUM    ");
             break;
-        case MARK_STATE_MARKER:
-            oled_printf("/0STATE: MARK     ");
+        case MARK_STATE_DECISION:
+            oled_printf("/0STATE: DECISION ");
             break;
         default:
             oled_printf("/0STATE: -----    ");

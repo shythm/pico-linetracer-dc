@@ -31,7 +31,7 @@ static inline void drive_buzzer_out(uint32_t time_ms) {
 }
 
 static inline bool _is_on_line(void) {
-    return __builtin_popcount(sensing_ir_state & MARK_MASK_ALL);
+    return __builtin_popcount(sensing_ir_state & 0xFFFF);
 }
 
 #define DRIVE_LINE_OUT_STATE_IDLE 0x00
@@ -172,8 +172,7 @@ void drive_first(void) {
     uint detected_mark_count = 0;
     uint detected_tick[DRIVE_MARK_COUNT_MAX];
 
-    struct mark_state_t mark_state =
-        mark_init_state(MARK_MASK_LEFT_DEFAULT, MARK_MASK_RIGHT_DEFAULT);
+    struct mark_state_t mark_state = mark_init_state();
     uint line_out_state = DRIVE_LINE_OUT_STATE_IDLE;
     uint mark_end_count = 0;
 
