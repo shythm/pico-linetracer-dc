@@ -126,6 +126,7 @@ void test_ir_position(void) {
     oled_clear();
     while (!switch_read()) {
         oled_printf("/0position: %6d", sensing_ir_position);
+        oled_printf("/1/rlimitpos: %6d", sensing_ir_position_limited);
     }
     sensing_stop();
 }

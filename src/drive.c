@@ -100,9 +100,10 @@ static void drive_velocity_commander(int32_t *const left, int32_t *const right) 
     }
 
     const int position = sensing_ir_position;
+    const int position_limited = sensing_ir_position_limited;
 
     // 곡선 감속
-    float v_center = v_command / (1 + abs(position) / (float)curve_decel);
+    float v_center = v_command / (1 + position_limited / (float)curve_decel);
 
     // 좌우 모터 속도 결정
     float kp = curve_coef * position;

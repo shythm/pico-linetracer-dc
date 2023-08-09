@@ -54,6 +54,12 @@ extern volatile sensing_ir_state_t sensing_ir_state;
 extern volatile int sensing_ir_position;
 
 /**
+ * @brief [READ ONLY] 곡선 감속 시, 진입할 때는 빠르게 감속하지만,
+ * 빠져나올 떄에 서서히 원래 속도로 돌아오게 만들기 위해 아래의 리미터를 사용한다.
+ */
+extern volatile int sensing_ir_position_limited;
+
+/**
  * @brief 전압 및 IR 센서의 정보를 ADC로부터 가져오고 가공할 준비를 하는 초기화 함수
  */
 void sensing_init(void);

@@ -1,3 +1,5 @@
+#include <stdlib.h>
+
 #include "hardware/gpio.h"
 #include "hardware/adc.h"
 #include "hardware/sync.h"
@@ -125,6 +127,7 @@ volatile int sensing_ir_normalized[SENSING_IR_COUNT];
 volatile float sensing_ir_threshold = SENSING_IR_THRESHOLD_DEFAULT;
 volatile sensing_ir_state_t sensing_ir_state;
 volatile int sensing_ir_position;
+volatile int sensing_ir_position_limited;
 
 /**
  * @brief IR 센서가 받아들일 수 있는 최소의 값과 범위를 통해 IR 센서의 값을 0에서 255 사이의 값으로 정규화합니다.
@@ -145,15 +148,13 @@ static inline int sensing_normalize_ir(int raw, int bias, int range) {
 /**
  * @brief 현재 라인이 감지되는 위치를 의미하는 position 값을 계산한다.
  *        내부적으로 window 기능이 구현돼 position 계산에 필요한 센서만 가변적으로 이용할 수 있도록 했다.
- *
- * @return 현재 라인이 감지되는 위치
  */
-static inline int sensing_calc_position(void) {
+static inline void sensing_calc_position(void) {
     static const int weight[SENSING_IR_COUNT] = {
         -30000, -26000, -22000, -18000, -14000, -10000, -6000, -2000, //
         2000, 6000, 10000, 14000, 18000, 22000, 26000, 30000, //
     };
-    static int position = 0;
+    const int position = sensing_ir_position;
 
     /**
      * 현재 position과 가중치를 통해 16조 어느 IR 센서 위에 트레이서가 위치하는지 구한다.
@@ -167,7 +168,7 @@ static inline int sensing_calc_position(void) {
     int window_start = MAX(window - window_size_half + 1, 0);
     int window_end = MIN(window + window_size_half, SENSING_IR_COUNT - 1);
 
-    position = 0;
+    int sum_weighted = 0;
     int sum = 0;
     /**
      * 중심을 0이라고 가정하고, 각 센서 값과 가중치를 곱하여 더한 값을 센서 값의 합으로 나누어 가중 평균을 구한다.
@@ -175,16 +176,41 @@ static inline int sensing_calc_position(void) {
      * 이에 반해 오른쪽에 라인이 위치하면 position 값은 양수가 되고 갈 수록 커질 것이다.
      */
     for (int i = window_start; i <= window_end; i++) {
-        position += sensing_ir_normalized[i] * weight[i];
+        sum_weighted += sensing_ir_normalized[i] * weight[i];
         sum += sensing_ir_normalized[i];
     }
 
     if (sum == 0) {
-        position = 0;
+        sensing_ir_position = 0;
     } else {
-        position /= sum;
+        sensing_ir_position = sum_weighted / sum;
     }
-    return position;
+}
+
+static float limiter_delta_in = 20.0f;
+static float limiter_delta_out = 10.0f;
+
+/**
+ * @brief 곡선 감속 시, 진입할 때는 빠르게 감속하지만, 빠져나올 떄에 서서히 원래 속도로 돌아오게 만들기 위해 아래의 기능을 추가한다.
+ */
+static inline void sensing_calc_position_limited(void) {
+    const int position = abs(sensing_ir_position);
+
+    if (sensing_ir_position_limited < position) {
+        // 곡선에 진입할 때, limiter_delta_in 만큼 증가시키면서 position에 대한 accel 구현
+        sensing_ir_position_limited += limiter_delta_in;
+
+        if (sensing_ir_position_limited > position) {
+            sensing_ir_position_limited = position;
+        }
+    } else {
+        // 곡선에서 나올 때, limiter_delta_out 만큼 감소시키면서 position에 대한 decel 구현
+        sensing_ir_position_limited -= limiter_delta_out;
+
+        if (sensing_ir_position_limited < position) {
+            sensing_ir_position_limited = position;
+        }
+    }
 }
 
 /**
@@ -236,7 +262,10 @@ static inline void sensing_update_ir(void) {
     sensing_ir_state |= (sensing_ir_normalized[i + 8] > (sensing_ir_threshold * 0xff)) << (0x7 - i);
 
     // position
-    sensing_ir_position = sensing_calc_position();
+    sensing_calc_position();
+
+    // limited position
+    sensing_calc_position_limited();
 
     i = (i + 1) & 0x07;
 }
