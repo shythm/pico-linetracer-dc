@@ -1,6 +1,7 @@
 #include "hardware/gpio.h"
 #include "hardware/adc.h"
 #include "hardware/sync.h"
+#include "hardware/timer.h"
 
 #include "sensing.h"
 #include "timer.h"
@@ -213,6 +214,7 @@ static inline void sensing_update_ir(void) {
     gpio_set_mask(ir_order[i]);
 
     gpio_put(SENSING_IR_MUX_GPIO_OUT, 1); // IR 발광센서 켜기
+    busy_wait_us_32(8); // 발광 센서 안정화
     // 두 개의 MUX로부터 ADC 값을 가져옴
     int raw_l = sensing_get_adc_data(GET_ADC_CHANNEL(SENSING_IR_MUX_GPIO_IN_A)) >> 4;
     int raw_r = sensing_get_adc_data(GET_ADC_CHANNEL(SENSING_IR_MUX_GPIO_IN_B)) >> 4;
