@@ -71,7 +71,7 @@ volatile static float v_command = 0.0f; // 지령 속도: 모터에 직접 인�
 volatile static float v_target = 0.0f; // 목표 속도: 가감속도 제어의 목표 속도
 volatile static float accel = 4.0f; // 가속도
 volatile static float decel = 6.0f; // 감속도
-volatile static int curve_decel = 24000; // 커브 감속 (작을 수록 곡선에서 감속을 많이 한다)
+volatile static int curve_decel = 16000; // 커브 감속 (작을 수록 곡선에서 감속을 많이 한다)
 volatile static float curve_coef = 0.00008f; // 곡률 계수
 
 /**
@@ -161,7 +161,7 @@ static void drive_stop(bool force) {
  * @brief 1차 주행
  */
 void drive_first(void) {
-    static float v_default = 2.8f;
+    static float v_default = 3.0f;
     static float fit_in = 0.2f;
 
     DRIVE_SET_PARAMETER(v_default, "default velocity", "%1.2f", 0.1f);
