@@ -10,6 +10,7 @@
 #include "sensing.h"
 #include "switch.h"
 #include "timer.h"
+#include "buzzer.h"
 
 #define UPDATE_PARAMETER(sw, param, delta) \
     if (sw == SWITCH_EVENT_BOTH)           \
@@ -131,6 +132,26 @@ void test_ir_position(void) {
     sensing_stop();
 }
 
+void test_buzzer(void) {
+    buzzer_init();
+
+    oled_clear();
+    oled_printf("/0Buzzer Test");
+    oled_printf("/1(1000ms / 100ms)");
+    for (;;) {
+        uint sw = switch_read();
+
+        if (sw == SWITCH_EVENT_LEFT)
+            buzzer_out(1000, false);
+        else if (sw == SWITCH_EVENT_RIGHT)
+            buzzer_out(100, true);
+        else if (sw == SWITCH_EVENT_BOTH)
+            break;
+    }
+
+    buzzer_out(0, true);
+}
+
 static void calibration(void) {
     enum switch_event_t sw;
     int temp[SENSING_IR_COUNT] = {
@@ -208,16 +229,6 @@ void do_format_flash(void) {
         oled_printf("/6%s", result ? "/rFailed." : "/gSuccess!");
         switch_wait_until_input();
     }
-}
-
-void test_buzzer(void) {
-    gpio_init(DRIVE_BUZZER_GPIO);
-    gpio_set_dir(DRIVE_BUZZER_GPIO, GPIO_OUT);
-    gpio_pull_down(DRIVE_BUZZER_GPIO);
-
-    gpio_put(DRIVE_BUZZER_GPIO, true);
-    switch_wait_until_input();
-    gpio_put(DRIVE_BUZZER_GPIO, false);
 }
 
 static const struct menu_t {
