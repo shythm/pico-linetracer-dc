@@ -41,7 +41,7 @@ int fs_format(void) {
 
     data->detected_mark_count = 0;
     for (int i = 0; i < DRIVE_MARK_COUNT_MAX; i++) {
-        data->detected_mark[i] = 0;
+        data->detected_mark[i] = MARK_NONE;
         data->detected_tick[i] = 0;
     }
 
