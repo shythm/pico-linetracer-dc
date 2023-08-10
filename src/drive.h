@@ -3,6 +3,19 @@
 
 #include "config.h"
 
-void drive_first(void);
+enum drive_t {
+    DRIVE_FIRST,
+    DRIVE_SECOND,
+};
+
+void drive(const enum drive_t type);
+
+static inline void drive_first() {
+    drive(DRIVE_FIRST);
+}
+
+static inline void drive_second() {
+    drive(DRIVE_SECOND);
+}
 
 #endif
