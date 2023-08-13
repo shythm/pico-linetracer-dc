@@ -137,8 +137,9 @@ void test_buzzer(void) {
 
     oled_clear();
     oled_printf("/0Buzzer Test");
-    oled_printf("/1(1000ms / 100ms)");
+    oled_printf("/1(1000ms // 100ms)");
     for (;;) {
+        buzzer_update();
         uint sw = switch_read();
 
         if (sw == SWITCH_EVENT_LEFT)
@@ -150,6 +151,37 @@ void test_buzzer(void) {
     }
 
     buzzer_out(0, true);
+}
+
+void print_saved_map(void) {
+    const struct fs_data_t *const fs_data = fs_get_data();
+    int index = 0;
+
+    oled_clear();
+    for (;;) {
+        oled_printf("/0/gmark");
+        switch (fs_data->detected_mark[index]) {
+        case MARK_LEFT:
+            oled_printf("/1/wleft");
+            break;
+        case MARK_RIGHT:
+            oled_printf("/1/wright");
+            break;
+        case MARK_BOTH:
+            oled_printf("/1/wboth");
+            break;
+        case MARK_CROSS:
+            oled_printf("/1/wcorss");
+            break;
+        }
+
+        oled_printf("/2/gposition/3/w%d", fs_data->detected_tick[index]);
+        oled_printf("/6%d//%d", index, fs_data->detected_mark_count - 1);
+
+        uint sw = switch_wait_until_input();
+        UPDATE_PARAMETER(sw, index, 1);
+        oled_clear();
+    }
 }
 
 static void calibration(void) {
@@ -243,8 +275,10 @@ static const struct menu_t {
     { "Motor PWM Test", test_motor_pwm },
     { "Motor Pos Test", test_motor_control },
     { "Flash Format", do_format_flash },
+    { "Print Saved Map", print_saved_map },
     { "Buzzer Test", test_buzzer },
     { "First Drive", drive_first },
+    { "Second Drive", drive_second },
 };
 
 int main(void) {
