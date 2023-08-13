@@ -141,9 +141,10 @@ static void drive_stop(bool force) {
     }
 
 void drive(const enum drive_t type) {
+    static int mark_recover_enabled = 0;
     static float v_default = 3.0f;
     static float v_peak = 8.0f;
-    static float fit_in = 0.2f;
+    static float fit_in = 0.18f;
     static float safe_distance = 0.2f;
 
     // 상수 설정
@@ -153,6 +154,9 @@ void drive(const enum drive_t type) {
     DRIVE_SET_PARAMETER(fit_in, "fit in", "%1.2f", 0.01f);
     if (type != DRIVE_FIRST) {
         DRIVE_SET_PARAMETER(v_peak, "peak velocity", "%1.2f", 0.1f);
+        DRIVE_SET_PARAMETER(accel, "accel", "%1.2f", 1.0f);
+        DRIVE_SET_PARAMETER(decel, "decel", "%1.2f", 1.0f);
+        DRIVE_SET_PARAMETER(mark_recover_enabled, "mark recover", "%d", 1);
     }
     oled_clear();
 
@@ -195,7 +199,7 @@ void drive(const enum drive_t type) {
 
         // 엔코더로부터 현재 위치 구하기
         const int32_t d_current =
-            (motor_get_encoder_value(MOTOR_LEFT) + motor_get_encoder_value(MOTOR_RIGHT)) / 2;
+            (abs(motor_get_encoder_value(MOTOR_LEFT)) + abs(motor_get_encoder_value(MOTOR_RIGHT))) / 2;
 
         if (type == DRIVE_FIRST) {
             /*
@@ -207,6 +211,10 @@ void drive(const enum drive_t type) {
                 detected_mark[detected_mark_count] = mark; // 마크 기록
                 detected_tick[detected_mark_count] = d_current; // 엔코더 값 기록
                 detected_mark_count++;
+
+                if (mark != MARK_CROSS) { // 크로스가 아닌 마크를 보면 부저를 울린다.
+                    buzzer_out(80, false);
+                }
             }
         } else {
             /*
@@ -238,29 +246,36 @@ void drive(const enum drive_t type) {
                     }
 
                     mark_index++;
+                    if (mark != MARK_CROSS) { // 크로스가 아닌 마크를 보면 부저를 울린다.
+                        buzzer_out(80, false);
+                    }
                 }
                 // 마크를 놓친 경우: 직선 가속 구간 설정 일단 중지
                 else {
                     is_mark_valid = false;
+                    previous_mark = MARK_NONE;
                     buzzer_out(1000, true);
                 }
             }
 
-#ifdef DRIVE_ENABLE_MARK_RECOVER
             /*
              * 마크를 놓친 경우, 다음 크로스 마크가 올 때까지 기다린다(마크 복구).
              */
-            if (mark == MARK_CROSS && !is_mark_valid) {
-                is_mark_valid = mark_index < detected_mark_count;
+            if (mark_recover_enabled && mark == MARK_CROSS && !is_mark_valid) {
+                is_mark_valid = true; // 일단 복구 성공했다고 가정
 
-                while (detected_mark[++mark_index] != MARK_CROSS) {
-                    if (mark_index >= detected_mark_count) {
+                while (detected_mark[++mark_index] != MARK_CROSS) { // 크로스 마크일 때까지 인덱스 증가
+                    if (mark_index >= detected_mark_count) { // 마크 수를 넘겨 버리면 invalid
                         is_mark_valid = false;
                         break;
                     }
                 }
+
+                if (is_mark_valid) {
+                    previous_mark = MARK_CROSS;
+                    mark_index++;
+                }
             }
-#endif
 
             /*
              * 현재 라인트레이서가 가속 구간에 위치한다면, 가속을 진행한다.
@@ -278,10 +293,6 @@ void drive(const enum drive_t type) {
         }
 
         if (mark) {
-            if (mark != MARK_CROSS) { // 크로스가 아닌 마크를 보면 부저를 울린다.
-                buzzer_out(80, false);
-            }
-
             if (mark == MARK_BOTH) { // 엔드 마크 증가
                 mark_end_count++;
             }
@@ -323,9 +334,14 @@ void drive(const enum drive_t type) {
         if (sw == SWITCH_EVENT_LEFT) {
             oled_printf("/6Saving ...");
             fs_data->detected_mark_count = detected_mark_count;
-            for (int i = 0; i < detected_mark_count; i++) {
-                fs_data->detected_mark[i] = detected_mark[i];
-                fs_data->detected_tick[i] = detected_tick[i];
+            for (int i = 0; i < DRIVE_MARK_COUNT_MAX; i++) {
+                if (i < detected_mark_count) {
+                    fs_data->detected_mark[i] = detected_mark[i];
+                    fs_data->detected_tick[i] = detected_tick[i];
+                } else {
+                    fs_data->detected_mark[i] = MARK_NONE;
+                    fs_data->detected_tick[i] = 0;
+                }
             }
             fs_flush_data();
         }
