@@ -52,8 +52,8 @@ static bool drive_check_line_out(uint *state) {
 
 volatile static float v_command = 0.0f; // 지령 속도: 모터에 직접 인가되는 속도
 volatile static float v_target = 0.0f; // 목표 속도: 가감속도 제어의 목표 속도
-volatile static float accel = 4.0f; // 가속도
-volatile static float decel = 6.0f; // 감속도
+volatile static float accel = 0.0f; // 가속도
+volatile static float decel = 0.0f; // 감속도
 volatile static int curve_decel = 16000; // 커브 감속 (작을 수록 곡선에서 감속을 많이 한다)
 volatile static float curve_coef = 0.00008f; // 곡률 계수
 
@@ -143,6 +143,8 @@ static void drive_stop(bool force) {
 void drive(const enum drive_t type) {
     static int mark_recover_enabled = 0;
     static float v_default = 3.0f;
+    static float _accel = 4.0f;
+    static float _decel = 6.0f;
     static float v_peak = 8.0f;
     static float fit_in = 0.18f;
     static float safe_distance = 0.2f;
@@ -154,8 +156,8 @@ void drive(const enum drive_t type) {
     DRIVE_SET_PARAMETER(fit_in, "fit in", "%1.2f", 0.01f);
     if (type != DRIVE_FIRST) {
         DRIVE_SET_PARAMETER(v_peak, "peak velocity", "%1.2f", 0.1f);
-        DRIVE_SET_PARAMETER(accel, "accel", "%1.2f", 1.0f);
-        DRIVE_SET_PARAMETER(decel, "decel", "%1.2f", 1.0f);
+        DRIVE_SET_PARAMETER(_accel, "accel", "%1.2f", 1.0f);
+        DRIVE_SET_PARAMETER(_decel, "decel", "%1.2f", 1.0f);
         DRIVE_SET_PARAMETER(mark_recover_enabled, "mark recover", "%d", 1);
     }
     oled_clear();
@@ -188,8 +190,11 @@ void drive(const enum drive_t type) {
 
     buzzer_init();
     sensing_start();
-    drive_start();
 
+    accel = _accel;
+    decel = _decel;
+
+    drive_start();
     while (!drive_check_line_out(&line_out_state)) {
         buzzer_update();
 
